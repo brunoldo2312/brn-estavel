@@ -1,134 +1,167 @@
-# 💼 Moeda Bruno (BRN) - Carteira Avançada & Blockchain P2P
+Manual da Carteira BRN
 
-A **Moeda Bruno (BRN)** é uma implementação experimental de um ecossistema de criptomoeda descentralizado baseado em princípios acadêmicos do protocolo *CryptoNote/Monero*. O projeto apresenta uma arquitetura modular com um livro-razão imutável, sincronização autônoma de nós Peer-to-Peer (P2P), propagação de transações via Mempool Broadcast e um utilitário automático de redirecionamento de portas (UPnP).
+Instalação, recebimento, transferências e testes entre computadores
 
----
+Este manual explica como executar a carteira BRN, criar e proteger carteiras, receber e enviar BRN, minerar blocos e demonstrar uma transferência entre dois computadores na mesma rede. A BRN é um protótipo educacional: não use valores reais, senhas reutilizadas ou chaves privadas de outras carteiras.
 
-## 🚀 Funcionalidades e Diferenciais Acadêmicos
+Visão geral
 
-*   **Automação de Rede (UPnP):** Descoberta e mapeamento automático de portas de entrada diretamente no roteador doméstico via pacotes SSDP.
-*   **Consenso de Maior Cadeia (*Longest Chain Rule*):** Algoritmo de resolução de consenso que substitui atomicamente a cadeia local se um par remoto apresentar uma blockchain estritamente mais longa e válida.
-*   **Mempool Gossip Protocol:** Propagação atômica em segundo plano de novas transações para todas as máquinas parceiras conectadas à rede antes da mineração do bloco.
-*   **Livro-Razão Relacional (SQLite3):** Persistência imutável indexada com auditoria histórica e reconstituição dinâmica de saldos em tempo real.
-*   **Backup Criptografado de Chaves (.wallet):** Cifragem simétrica em fluxo utilizando derivação de chaves PBKDF de 5000 rounds para proteção de Spend Keys locais.
-*   **Interface Gráfica Nativa (Desktop Puro):** Janela escura desacoplada construída sobre a ponte de injeção JavaScript-Python (`pywebview` + `PyQt6`).
-*   **Endereço de Recebimento:** Botão para copiar o endereço público da carteira com um clique, facilitando o recebimento de BRN sem expor a chave privada.
+A carteira BRN guarda um endereço público para receber BRN e uma chave privada para autorizar envios. As transferências entram na mempool e são confirmadas quando um bloco é minerado. O extrato mostra depósitos, retiradas, recompensas de mineração e operações pendentes.
 
----
+Item
 
-## 📁 Estrutura Modular do Projeto
+Finalidade
 
-O ecossistema foi dividido em módulos isolados para garantir a consistência de dados, mitigar erros de tokenização e otimizar o tempo de compilação:
+Endereço BRN
 
-```text
-├── bruno_blockchain_real.py  # Motor principal, API de controle e chamadas P2P
-├── cripto_db.py              # Camada de persistência relacional e queries ordinais SQLite3
-├── cripto_wallet.py          # Gerenciador de backup e criptografia PBKDF simétrica
-├── cripto_p2p_network.py     # Descoberta de Gateway e Auto Port Forwarding (UPnP)
-└── index.html                # Interface visual baseada na ponte Javascript-Python Native
-```
+Pode ser compartilhado para receber depósitos.
 
-### Receber BRN
+Chave privada
 
-1. Crie ou importe uma carteira.
-2. Abaixo de **Seu Endereço Público**, clique em **Copiar endereço de recebimento**.
-3. Envie somente esse endereço `brn1...` para quem fará o depósito. Nunca compartilhe a chave privada.
+Autoriza gastos. Nunca compartilhe.
 
-## Segurança e limites do protótipo
+Mempool
 
-Esta é uma blockchain educacional, não indicada para valores reais. A versão atual valida a assinatura contra o endereço do remetente, impede gasto duplo na mempool, rejeita blocos/cadeias com gastos sem saldo e limita mensagens P2P recebidas.
+Fila temporária de transações antes da confirmação.
 
-Backups novos usam `cryptography` (Fernet com PBKDF2-SHA256 e 600.000 iterações), exigem senha de ao menos 12 caracteres e são gravados na pasta `wallets/`. Backups antigos Fernet ainda podem ser importados e devem ser reexportados. Instale as dependências antes de iniciar:
+Bloco confirmado
 
-```bash
-pip install ecdsa cryptography pywebview pyqt6
-```
+Registro persistente da transação na blockchain.
 
-O UPnP deixou de ser ativado automaticamente. Só exponha a porta da carteira à internet se você entender e aceitar esse risco; para testes na mesma rede, use a sincronização manual da interface.
+1 Preparação no primeiro computador
 
----
+Extraia o projeto em uma pasta local. Evite executar diretamente dentro de uma pasta sincronizada enquanto o aplicativo estiver aberto, pois o serviço de sincronização pode manter arquivos bloqueados.
 
-## 🛠️ Como Executar o Projeto (Máquina Local)
+Abra o Prompt de Comando na pasta do projeto e execute:
 
-### 1. Preparação do Ambiente e Dependências (Linux Ubuntu)
-Abra o terminal no diretório do projeto e execute os comandos para instalar as bibliotecas de sistema e isolar o ambiente virtual:
+py -m venv env
 
-```bash
-# Instalar pacotes de sistema necessários
-sudo apt update && sudo apt install python3-venv python3-full python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 -y
+env\Scripts\activate
 
-# Criar e ativar o ambiente virtual (VENV)
-python3 -m venv env
-source env/bin/activate
+python -m pip install --upgrade pip
 
-# Instalar dependências de execução e o motor gráfico isolado PyQt6
-pip install --upgrade pip
-pip install pywebview flask pyqt6 PyQt6-WebEngine qtpy
-```
+pip install ecdsa cryptography pywebview PyQt6 PyQt6-WebEngine
 
-### 2. Inicialização do Nó Principal
-Sempre limpe os bancos de dados corrompidos ou inconsistentes de sessões anteriores antes de iniciar o nó na porta de sua escolha (Ex: `6001`):
+python bruno_blockchain_real.py 6001
 
-```bash
-rm -rf __pycache__
-rm -f *.db
-python3 bruno_blockchain_real.py 6001
-```
+A janela da carteira deve abrir. A porta 6001 identifica o primeiro nó da rede local.
 
----
+2 Criar ou importar uma carteira
 
-## 🌐 Sincronização entre Máquinas Físicas Diferentes
+Clique em Criar Nova Carteira ECDSA.
 
-Para rodar a Moeda Bruno em múltiplos computadores conectados na mesma rede Wi-Fi ou cabo:
+Anote o endereço público. Ele começa com brn1 e é usado para receber BRN.
 
-### 1. Identificar o IP da Máquina Principal
-No terminal do seu nó principal (Ex: Seu HP Pavilion), execute:
-```bash
-hostname -I
-# Retornará algo como: 192.168.0.17
-```
+Guarde a chave privada em local seguro. Ela permite movimentar o saldo.
 
-### 2. Executar o Nó na Segunda Máquina
-Copie os arquivos do projeto para o segundo computador. Abra o terminal dele e inicie o script alterando a porta de escuta para não gerar conflitos:
+Para manter um backup, escolha um nome de arquivo, use senha de pelo menos 12 caracteres e clique em Exportar e Criptografar Backup.
 
-*   **No Linux:** `python3 bruno_blockchain_real.py 6002`
-*   **No Windows (CMD Administrador):** 
-    ```cmd
-    python -m venv env
-    .\env\Scripts\activate
-    pip install pywebview flask pyqt6 PyQt6-WebEngine qtpy
-    python bruno_blockchain_real.py 6002
-    ```
+Para importar uma carteira existente, informe o nome do arquivo e a senha e clique em Importar e Descriptografar.
 
-### 3. Sincronizar as Cadeias de Blocos
-1. Vá até a tela do aplicativo na **Segunda Máquina**.
-2. No painel superior rosa (**Rede Descentralizada**), insira o IP do seu nó principal: `192.168.0.17`.
-3. Defina a porta remota do nó principal: `6001`.
-4. Clique em **"Conectar e Sincronizar Cadeira"**. O ecossistema fará o download e a verificação criptográfica do livro-razão automaticamente.
+3 Receber depósitos
 
-*Nota de Firewall:* Se a conexão falhar, certifique-se de liberar a porta de entrada no terminal do nó Linux principal rodando: `sudo ufw allow 6001/tcp`.
+Crie ou importe a carteira que receberá BRN.
 
----
+Abaixo de Seu Endereço Público, clique em Copiar endereço de recebimento.
 
-## 📦 Como Gerar o Executável Binário (.App / .Exe)
+Envie apenas o endereço copiado para a pessoa ou carteira que fará o depósito.
 
-Para distribuir a carteira de privacidade como um aplicativo desktop nativo e independente (sem a necessidade de instalação prévia do Python na máquina de destino):
+Após a confirmação do bloco, verifique o saldo e o extrato de Depósitos e Retiradas.
 
-### No Linux (Gera binário executável nativo)
-```bash
-pip install pyinstaller
-pyinstaller --onefile --add-data "index.html:." --windowed bruno_blockchain_real.py
+Importante: o botão copia somente o endereço público. Não envie a chave privada, mesmo para suporte técnico ou outro participante da rede.
 
-# Para executar o binário gerado na pasta dist/
-cd dist
-chmod +x bruno_blockchain_real
-./bruno_blockchain_real 6001
-```
+4 Enviar BRN e confirmar a retirada
 
-### No Windows (Gera o arquivo executável .exe)
-Abra o Prompt de Comando (CMD) do Windows dentro da pasta do projeto e execute:
-```cmd
-pip install pyinstaller
-pyinstaller --onefile --add-data "index.html;." --windowed bruno_blockchain_real.py
-```
-O arquivo unificado estará disponível no diretório `dist/bruno_blockchain_real.exe`.
+Carregue a carteira que possui saldo; a chave privada e a chave pública precisam estar disponíveis na tela.
+
+No campo de destino, cole o endereço BRN de recebimento do destinatário.
+
+Informe a quantia e clique em Assinar e Enviar Transação.
+
+Inicie a mineração ou aguarde um minerador da rede confirmar a operação em um novo bloco.
+
+Consulte o extrato. Antes do bloco, a retirada aparece como Pendente; depois, como Confirmada.
+
+A carteira recusa quantias inválidas, falta de saldo, duplicidade de operação pendente e tentativas de usar uma chave que não corresponda ao endereço remetente.
+
+5 Minerar blocos
+
+Clique em Iniciar Mineração Contínua para minerar em segundo plano. A carteira usada na mineração recebe a recompensa de bloco. Clique novamente para parar. A mineração é apenas parte da demonstração local e pode consumir processamento do computador.
+
+6 Demonstração entre dois computadores
+
+Os dois computadores devem estar conectados à mesma rede Wi-Fi ou cabo e usar a mesma versão do projeto.
+
+Etapa
+
+Ação
+
+Computador A
+
+Execute python bruno_blockchain_real.py 6001, crie a carteira A e mine BRN nela.
+
+Computador B
+
+Instale o projeto e execute python bruno_blockchain_real.py 6002. Crie a carteira B e copie seu endereço de recebimento.
+
+Obter o IP do A
+
+No CMD do computador A, execute ipconfig e anote o Endereço IPv4, por exemplo 192.168.0.17.
+
+Sincronizar o B
+
+Na carteira B, informe o IP do A e a porta 6001 em Conectar e Sincronizar Cadeia.
+
+Enviar e confirmar
+
+No A, envie BRN para o endereço B e mine um bloco. No B, sincronize novamente para visualizar o depósito.
+
+Se a conexão falhar, libere a porta 6001 no computador A. Em CMD aberto como administrador: netsh advfirewall firewall add rule name="BRN Porta 6001" dir=in action=allow protocol=TCP localport=6001
+
+7 Verificação da demonstração
+
+No computador A, o extrato deve mostrar a retirada confirmada.
+
+No computador B, o extrato deve mostrar o depósito confirmado.
+
+Os dois nós devem exibir a mesma quantidade de blocos após a sincronização.
+
+Registre endereço de origem, endereço de destino, valor, data e identificador mostrado no extrato para apresentar a prova.
+
+8 Solução de problemas
+
+Situação
+
+Como resolver
+
+ModuleNotFoundError core
+
+Use a pasta do projeto atualizado. A primeira linha de bruno_blockchain_real.py deve ser import hashlib.
+
+Porta em uso
+
+Feche outra instância do programa ou inicie usando outra porta, como 6002.
+
+Saldo não aparece no outro PC
+
+Confirme que o bloco foi minerado e sincronize novamente a carteira que recebeu.
+
+Botão de cópia não aparece
+
+Feche e abra a carteira usando a versão que contém o index.html atualizado.
+
+Senha de backup recusada
+
+Use uma senha com no mínimo 12 caracteres para novos backups.
+
+9 Cuidados de segurança
+
+Nunca compartilhe a chave privada, a senha do backup ou o arquivo de carteira descriptografado.
+
+Use esta aplicação apenas para aprendizado, demonstrações e BRN de teste.
+
+Mantenha cópias criptografadas do backup em local protegido.
+
+Não exponha as portas da carteira à internet sem compreender o risco e configurar firewall adequadamente.
+
+Manual da Carteira BRN | Uso educacional e testes em rede local
