@@ -4,6 +4,7 @@ Motor principal da Moeda Bruno v2.
 Implementa: PoW (SHA-256), dificuldade ajustável, halving,
 suprimento máximo, modelo UTXO, Merkle Root e taxas de transação.
 """
+
 import hashlib
 import json
 import time
@@ -14,6 +15,7 @@ from typing import List, Optional, Set
 
 from cripto_db_v2 import BlockchainDB
 from cripto_wallet_v2 import Wallet
+from cripto_p2p_network import P2PManager
 
 getcontext().prec = 18
 
@@ -25,17 +27,17 @@ COIN_SYMBOL = "BRN"
 MAX_SUPPLY = Decimal("21000000")
 INITIAL_REWARD = Decimal("50")
 HALVING_INTERVAL = 210000
-TARGET_BLOCK_TIME = 10.0            # 10 segundos para testes (BTC usa 600)
+TARGET_BLOCK_TIME = 10.0
 DIFFICULTY_ADJUSTMENT_INTERVAL = 5
 INITIAL_DIFFICULTY = 4
 MAX_DIFFICULTY = 8
 MIN_TX_FEE = Decimal("0.0001")
 
-# Gênese determinística (todos os nós criam exatamente o mesmo bloco 0)
 GENESIS_TIMESTAMP = 1700000000.0
 GENESIS_NONCE = 171419
 GENESIS_ADDRESS = "brn1111cd943fa71e1f91dcd62f52fc6138bc845ab"
 GENESIS_HASH = "0000d904d5f2954d5c9aa43eafed2f885ad17c5047605ed6e385458b590fcaff"
+
 
 # ============================================================
 # MERKLE ROOT
@@ -60,9 +62,11 @@ class TxInput:
         self.txid = txid
         self.output_index = output_index
         self.signature = signature
+
     def to_dict(self):
         return {"txid": self.txid, "output_index": self.output_index,
                 "signature": self.signature}
+
     @staticmethod
     def from_dict(d):
         return TxInput(d["txid"], d["output_index"], d.get("signature", ""))
@@ -72,8 +76,10 @@ class TxOutput:
     def __init__(self, address, amount):
         self.address = address
         self.amount = str(amount)
+
     def to_dict(self):
         return {"address": self.address, "amount": self.amount}
+
     @staticmethod
     def from_dict(d):
         return TxOutput(d["address"], d["amount"])
@@ -170,7 +176,10 @@ class CriptoAPI:
         self.miner_thread = None
 
         self._init_genesis()
-        threading.Thread(target=self._start_p2p_server, daemon=True).start()
+
+        # Inicia P2P completo
+        self.p2p = P2PManager(self, node_port, enable_upnp=True)
+        self.p2p.start()
 
     # ---------- GÊNESE ----------
     def _init_genesis(self):
@@ -262,6 +271,9 @@ class CriptoAPI:
         elapsed = time.time() - start
         print(f"[MINERADO] {block.hash[:24]}... em {elapsed:.2f}s | {len(txs)} tx")
         self.db.save_block(block.to_dict())
+
+        # Propaga o bloco para os peers
+        self.p2p.broadcast_block(block.to_dict())
         return block
 
     def start_mining(self, miner_address):
@@ -316,14 +328,12 @@ class CriptoAPI:
 
         tx = Transaction(inputs=inputs, outputs=outputs,
                          timestamp=time.time(), fee=fee, coinbase=False)
-        # Assinatura simplificada
         sig = wallet.sign(tx.txid)
         for i in inputs:
             i.signature = sig
         return tx, "OK"
 
     def submit_transaction(self, tx: Transaction):
-        # Validações
         if Decimal(tx.fee) < MIN_TX_FEE:
             return False, f"Taxa abaixo do mínimo ({MIN_TX_FEE})"
 
@@ -341,13 +351,15 @@ class CriptoAPI:
             return False, "Saldo insuficiente"
 
         with self.mempool_lock:
-            # Gasto duplo na mempool
             for pending in self.mempool:
                 for pinp in pending.inputs:
                     for inp in tx.inputs:
                         if pinp.txid == inp.txid and pinp.output_index == inp.output_index:
                             return False, "Gasto duplo detectado na mempool"
             self.mempool.append(tx)
+
+        # Propaga a transação para os peers
+        self.p2p.broadcast_tx(tx.to_dict())
         return True, f"Transação {tx.txid[:16]}... adicionada à mempool"
 
     # ---------- MÉTODOS PARA main.py / explorer.py ----------
@@ -364,7 +376,7 @@ class CriptoAPI:
         return [t.to_dict() for t in self.mempool]
 
     def get_connected_peers(self):
-        return list(self.peers)
+        return list(self.p2p.discovery.get_peers().keys())
 
     def get_local_ips(self):
         try:
@@ -374,6 +386,7 @@ class CriptoAPI:
             return []
 
     def get_status(self):
+        p2p_status = self.p2p.get_status()
         return {
             "coin": COIN_NAME,
             "symbol": COIN_SYMBOL,
@@ -383,32 +396,24 @@ class CriptoAPI:
             "total_mined": str(self.db.total_mined()),
             "max_supply": str(MAX_SUPPLY),
             "mempool_size": len(self.mempool),
-            "peers": len(self.peers),
+            "peers": p2p_status["peer_count"],
+            "external_ip": p2p_status["external_ip"],
             "is_mining": self.is_mining,
         }
 
-    # ---------- P2P (esqueleto) ----------
-    def _start_p2p_server(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind(("0.0.0.0", self.p2p_port))
-            s.listen(5)
-            print(f"[P2P v2] Escutando na porta {self.p2p_port}")
-            while True:
-                conn, addr = s.accept()
-                threading.Thread(target=self._handle_peer, args=(conn, addr),
-                                 daemon=True).start()
-        except Exception as e:
-            print(f"[P2P v2] Erro: {e}")
+    # ---------- MÉTODOS PARA A GUI ----------
+    def get_wallet_info(self):
+        """Retorna informações da carteira atual (usado pela GUI)."""
+        # A carteira é gerenciada pelo main.py; aqui retornamos um placeholder.
+        # O main.py injeta o endereço da carteira no objeto api.
+        return {"address": getattr(self, "wallet_address", "brn1...")}
 
-    def _handle_peer(self, conn, addr):
-        try:
-            data = conn.recv(65536).decode()
-            msg = json.loads(data)
-            if msg.get("type") == "get_status":
-                conn.send(json.dumps(self.get_status()).encode())
-        except Exception:
-            pass
-        finally:
-            conn.close()
+    def send_from_gui(self, to_address, amount, fee="0.0001"):
+        """Método chamado pela GUI para enviar transação."""
+        if not hasattr(self, "wallet"):
+            return "Erro: carteira não configurada"
+        tx, msg = self.create_transaction(self.wallet, to_address, amount, fee)
+        if not tx:
+            return msg
+        ok, m = self.submit_transaction(tx)
+        return m
