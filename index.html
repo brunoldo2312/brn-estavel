@@ -67,7 +67,8 @@
             <label>Nome do Arquivo:</label>
             <input type="text" id="wallet-filename" placeholder="Ex: minha_carteira">
             <label>Senha de Criptografia:</label>
-            <input type="password" id="wallet-password" placeholder="Digite uma senha forte...">
+            <input type="password" id="wallet-password" placeholder="Mínimo de 12 caracteres...">
+            <div class="empty" style="padding:0 2px 8px;">A senha precisa ter <b>pelo menos 12 caracteres</b> para gerar o backup criptografado.</div>
             <button style="background:#b4befe;" onclick="salvarCarteiraFisica()">Exportar e Criptografar Backup</button>
             <button style="background:#cba6f7;" onclick="carregarCarteiraFisica()">Importar e Descriptografar</button>
         </div>
@@ -254,7 +255,7 @@
         }
 
         function salvarCarteiraFisica() {
-            const filename = document.getElementById('wallet-filename').value;
+            const filename = document.getElementById('wallet-filename').value.trim();
             const password = document.getElementById('wallet-password').value;
             const address = document.getElementById('addr').innerText;
             const spend_key = document.getElementById('s_key').innerText;
@@ -264,8 +265,12 @@
                 alert("Gere uma carteira e defina nome/senha para exportar!");
                 return;
             }
+            if (password.length < 12) {
+                alert("A senha precisa ter pelo menos 12 caracteres. Atualmente tem " + password.length + ".");
+                return;
+            }
             window.pywebview.api.save_encrypted_wallet(filename, password, address, spend_key, pub_key).then(function(res) {
-                alert(res.message);
+                alert((res.status === "sucesso" ? "✅ " : "⚠️ ") + res.message);
             });
         }
 

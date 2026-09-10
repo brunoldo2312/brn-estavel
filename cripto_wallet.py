@@ -79,7 +79,7 @@ class WalletManager:
     def save_encrypted_wallet(cls, filename, password, address, spend_secret_key, public_key=""):
         try:
             if not FERNET_AVAILABLE:
-                return {"status": "erro", "message": "A biblioteca cryptography é obrigatória para salvar carteiras com segurança."}
+                return {"status": "erro", "message": "A biblioteca 'cryptography' não está instalada neste ambiente. Execute: pip install cryptography (e reinicie o aplicativo)."}
             if not isinstance(password, str) or len(password) < 12:
                 return {"status": "erro", "message": "Use uma senha com pelo menos 12 caracteres."}
             filename = cls._wallet_path(filename)

@@ -1,151 +1,134 @@
-📘 Manual de Instalação e Execução — BRN Blockchain
-Guia passo a passo para instalar as dependências criptográficas e executar o sistema BRN-Estavel / Bruno Blockchain Real.
+# 💼 Moeda Bruno (BRN) - Carteira Avançada & Blockchain P2P
 
-📋 Pré-requisitos
-Antes de começar, certifique-se de ter instalado:
+A **Moeda Bruno (BRN)** é uma implementação experimental de um ecossistema de criptomoeda descentralizado baseado em princípios acadêmicos do protocolo *CryptoNote/Monero*. O projeto apresenta uma arquitetura modular com um livro-razão imutável, sincronização autônoma de nós Peer-to-Peer (P2P), propagação de transações via Mempool Broadcast e um utilitário automático de redirecionamento de portas (UPnP).
 
-Software	Versão mínima	Download
-Python	3.9 ou superior	https://www.python.org/downloads/
-Git	Qualquer	https://git-scm.com/download/win
-⚠️ Na instalação do Python, marque a opção "Add Python to PATH".
+---
 
-Para conferir se está tudo certo, abra o CMD e rode:
+## 🚀 Funcionalidades e Diferenciais Acadêmicos
 
-cmd
-python --version
-git --version
-📁 Passo 1 — Acessar a pasta do projeto
-cmd
-cd C:\Users\mayra\OneDrive\Imagens\bruno crypto\brn
-Se a pasta ainda não existir, clone o repositório:
+*   **Automação de Rede (UPnP):** Descoberta e mapeamento automático de portas de entrada diretamente no roteador doméstico via pacotes SSDP.
+*   **Consenso de Maior Cadeia (*Longest Chain Rule*):** Algoritmo de resolução de consenso que substitui atomicamente a cadeia local se um par remoto apresentar uma blockchain estritamente mais longa e válida.
+*   **Mempool Gossip Protocol:** Propagação atômica em segundo plano de novas transações para todas as máquinas parceiras conectadas à rede antes da mineração do bloco.
+*   **Livro-Razão Relacional (SQLite3):** Persistência imutável indexada com auditoria histórica e reconstituição dinâmica de saldos em tempo real.
+*   **Backup Criptografado de Chaves (.wallet):** Cifragem simétrica em fluxo utilizando derivação de chaves PBKDF de 5000 rounds para proteção de Spend Keys locais.
+*   **Interface Gráfica Nativa (Desktop Puro):** Janela escura desacoplada construída sobre a ponte de injeção JavaScript-Python (`pywebview` + `PyQt6`).
+*   **Endereço de Recebimento:** Botão para copiar o endereço público da carteira com um clique, facilitando o recebimento de BRN sem expor a chave privada.
 
-cmd
-git clone https://github.com/brunoldo2312/brn-estavel.git
-cd brn-estavel
-🐍 Passo 2 — Criar e ativar o ambiente virtual (venv)
-O ambiente virtual isola as dependências do projeto, evitando conflitos com outros programas Python.
+---
 
-Criar o venv (só na primeira vez):
+## 📁 Estrutura Modular do Projeto
 
-cmd
-python -m venv venv
-Ativar o venv (sempre que for usar o projeto):
+O ecossistema foi dividido em módulos isolados para garantir a consistência de dados, mitigar erros de tokenização e otimizar o tempo de compilação:
 
-cmd
-venv\Scripts\activate
-Quando ativado, o prompt exibirá (venv) no início:
+```text
+├── bruno_blockchain_real.py  # Motor principal, API de controle e chamadas P2P
+├── cripto_db.py              # Camada de persistência relacional e queries ordinais SQLite3
+├── cripto_wallet.py          # Gerenciador de backup e criptografia PBKDF simétrica
+├── cripto_p2p_network.py     # Descoberta de Gateway e Auto Port Forwarding (UPnP)
+└── index.html                # Interface visual baseada na ponte Javascript-Python Native
+```
 
-text
-(venv) C:\Users\mayra\OneDrive\Imagens\bruno crypto\brn>
-💡 Para sair do venv depois, basta digitar: deactivate
+### Receber BRN
 
-🔐 Passo 3 — Instalar as dependências criptográficas
-Essas são as bibliotecas essenciais para o funcionamento do sistema:
+1. Crie ou importe uma carteira.
+2. Abaixo de **Seu Endereço Público**, clique em **Copiar endereço de recebimento**.
+3. Envie somente esse endereço `brn1...` para quem fará o depósito. Nunca compartilhe a chave privada.
 
-3.1 — Atualizar o pip (recomendado)
-cmd
-python -m pip install --upgrade pip
-3.2 — Instalar as bibliotecas criptográficas e de interface
-cmd
-pip install ecdsa
-pip install pywebview
-Descrição de cada uma:
+## Segurança e limites do protótipo
 
-Biblioteca	Função
-ecdsa	Gera chaves privadas/públicas na curva secp256k1 (mesma do Bitcoin) e valida assinaturas digitais
-pywebview	Cria a janela desktop que exibe a interface web do sistema
-3.3 — Instalar dependências auxiliares (recomendado)
-Estas costumam ser usadas em projetos de blockchain com interface web:
+Esta é uma blockchain educacional, não indicada para valores reais. A versão atual valida a assinatura contra o endereço do remetente, impede gasto duplo na mempool, rejeita blocos/cadeias com gastos sem saldo e limita mensagens P2P recebidas.
 
-cmd
-pip install requests
-pip install flask
-pip install base58
-pip install bech32
-pip install qrcode[pil]
-Biblioteca	Função
-requests	Comunicação HTTP com nós Bitcoin (RPC)
-flask	Servidor web local da interface
-base58	Codificação de endereços Bitcoin (formato legado)
-bech32	Codificação de endereços SegWit (bc1...)
-qrcode[pil]	Geração de QR Codes para os endereços
-3.4 — Instalação em lote (alternativa rápida)
-Se preferir instalar tudo de uma só vez:
+Backups novos usam `cryptography` (Fernet com PBKDF2-SHA256 e 600.000 iterações), exigem senha de ao menos 12 caracteres e são gravados na pasta `wallets/`. Backups antigos Fernet ainda podem ser importados e devem ser reexportados. Instale as dependências antes de iniciar:
 
-cmd
-pip install ecdsa pywebview requests flask base58 bech32 qrcode[pil]
-📄 Passo 4 — Criar o arquivo requirements.txt
-Para não precisar lembrar dos comandos no futuro, registre as dependências:
+```bash
+pip install ecdsa cryptography pywebview pyqt6
+```
 
-cmd
-echo ecdsa> requirements.txt
-echo pywebview>> requirements.txt
-echo requests>> requirements.txt
-echo flask>> requirements.txt
-echo base58>> requirements.txt
-echo bech32>> requirements.txt
-echo qrcode[pil]>> requirements.txt
-Conferir o conteúdo:
+O UPnP deixou de ser ativado automaticamente. Só exponha a porta da carteira à internet se você entender e aceitar esse risco; para testes na mesma rede, use a sincronização manual da interface.
 
-cmd
-type requirements.txt
-Nas próximas vezes, basta rodar:
+---
 
-cmd
-pip install -r requirements.txt
-▶️ Passo 5 — Executar o sistema
-Com o (venv) ativado e as dependências instaladas:
+## 🛠️ Como Executar o Projeto (Máquina Local)
 
-cmd
-py bruno_blockchain_real.py 6002
-🔢 O número 6002 é a porta onde a interface web será servida. Se estiver ocupada, troque por outra (ex: 6003, 8080).
+### 1. Preparação do Ambiente e Dependências (Linux Ubuntu)
+Abra o terminal no diretório do projeto e execute os comandos para instalar as bibliotecas de sistema e isolar o ambiente virtual:
 
-O sistema deverá:
+```bash
+# Instalar pacotes de sistema necessários
+sudo apt update && sudo apt install python3-venv python3-full python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 -y
 
-Abrir uma janela desktop com a interface, ou
+# Criar e ativar o ambiente virtual (VENV)
+python3 -m venv env
+source env/bin/activate
 
-Disponibilizar a interface em http://localhost:6002 no navegador.
+# Instalar dependências de execução e o motor gráfico isolado PyQt6
+pip install --upgrade pip
+pip install pywebview flask pyqt6 PyQt6-WebEngine qtpy
+```
 
-🔁 Rotina para rodar novamente (resumo)
-Toda vez que quiser executar o sistema, faça apenas:
+### 2. Inicialização do Nó Principal
+Sempre limpe os bancos de dados corrompidos ou inconsistentes de sessões anteriores antes de iniciar o nó na porta de sua escolha (Ex: `6001`):
 
-cmd
-cd C:\Users\mayra\OneDrive\Imagens\bruno crypto\brn
-venv\Scripts\activate
-py bruno_blockchain_real.py 6002
-🛠️ Solução de problemas comuns
-Erro	Causa	Solução
-No module named 'webview'	pywebview não instalado	pip install pywebview
-No module named 'ecdsa'	ecdsa não instalado	pip install ecdsa
-No module named 'flask'	flask não instalado	pip install flask
-No module named 'requests'	requests não instalado	pip install requests
-No module named 'base58'	base58 não instalado	pip install base58
-venv\Scripts\activate não é reconhecido	venv não foi criado	python -m venv venv
-pip não é reconhecido	Python fora do PATH	Reinstale o Python marcando "Add to PATH"
-Porta 6002 em uso	Outro processo usa a porta	Use outra porta: py bruno_blockchain_real.py 6003
-🔒 Boas práticas de segurança
-Nunca suba o venv/ nem o wallet.json para o GitHub.
+```bash
+rm -rf __pycache__
+rm -f *.db
+python3 bruno_blockchain_real.py 6001
+```
 
-Crie um arquivo .gitignore com:
+---
 
-cmd
-echo venv/>> .gitignore
-echo wallet.json>> .gitignore
-echo __pycache__/>> .gitignore
-Guarde a chave privada da carteira em local seguro (nunca compartilhe).
+## 🌐 Sincronização entre Máquinas Físicas Diferentes
 
-Faça backup periódico do arquivo wallet.json e do ledger.json.
+Para rodar a Moeda Bruno em múltiplos computadores conectados na mesma rede Wi-Fi ou cabo:
 
-📌 Ordem resumida (cheat sheet)
-cmd
-:: 1. Entrar na pasta
-cd C:\Users\mayra\OneDrive\Imagens\bruno crypto\brn
+### 1. Identificar o IP da Máquina Principal
+No terminal do seu nó principal (Ex: Seu HP Pavilion), execute:
+```bash
+hostname -I
+# Retornará algo como: 192.168.0.17
+```
 
-:: 2. Ativar ambiente virtual
-venv\Scripts\activate
+### 2. Executar o Nó na Segunda Máquina
+Copie os arquivos do projeto para o segundo computador. Abra o terminal dele e inicie o script alterando a porta de escuta para não gerar conflitos:
 
-:: 3. Instalar dependências criptográficas
-pip install ecdsa pywebview requests flask base58 bech32 qrcode[pil]
+*   **No Linux:** `python3 bruno_blockchain_real.py 6002`
+*   **No Windows (CMD Administrador):** 
+    ```cmd
+    python -m venv env
+    .\env\Scripts\activate
+    pip install pywebview flask pyqt6 PyQt6-WebEngine qtpy
+    python bruno_blockchain_real.py 6002
+    ```
 
-:: 4. Executar o sistema
-py bruno_blockchain_real.py 6002
+### 3. Sincronizar as Cadeias de Blocos
+1. Vá até a tela do aplicativo na **Segunda Máquina**.
+2. No painel superior rosa (**Rede Descentralizada**), insira o IP do seu nó principal: `192.168.0.17`.
+3. Defina a porta remota do nó principal: `6001`.
+4. Clique em **"Conectar e Sincronizar Cadeira"**. O ecossistema fará o download e a verificação criptográfica do livro-razão automaticamente.
+
+*Nota de Firewall:* Se a conexão falhar, certifique-se de liberar a porta de entrada no terminal do nó Linux principal rodando: `sudo ufw allow 6001/tcp`.
+
+---
+
+## 📦 Como Gerar o Executável Binário (.App / .Exe)
+
+Para distribuir a carteira de privacidade como um aplicativo desktop nativo e independente (sem a necessidade de instalação prévia do Python na máquina de destino):
+
+### No Linux (Gera binário executável nativo)
+```bash
+pip install pyinstaller
+pyinstaller --onefile --add-data "index.html:." --windowed bruno_blockchain_real.py
+
+# Para executar o binário gerado na pasta dist/
+cd dist
+chmod +x bruno_blockchain_real
+./bruno_blockchain_real 6001
+```
+
+### No Windows (Gera o arquivo executável .exe)
+Abra o Prompt de Comando (CMD) do Windows dentro da pasta do projeto e execute:
+```cmd
+pip install pyinstaller
+pyinstaller --onefile --add-data "index.html;." --windowed bruno_blockchain_real.py
+```
+O arquivo unificado estará disponível no diretório `dist/bruno_blockchain_real.exe`.
