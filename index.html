@@ -14,6 +14,7 @@
         button { background: #89b4fa; color: #11111b; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 14px; margin-bottom: 5px; }
         button:hover { background: #b4befe; }
         button.active-mining { background: #f38ba8; color: #11111b; }
+        button.copy-button { width: auto; padding: 7px 10px; margin-top: 6px; background: #a6e3a1; font-size: 12px; }
         input { width: 96%; padding: 10px; background: #1e1e2e; border: 1px solid #585b70; border-radius: 6px; color: #cdd6f4; margin-bottom: 10px; font-family: monospace; }
         .key-box { background: #181825; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 11px; word-break: break-all; margin-top: 5px; color: #fab387; }
         .log-box { background: #11111b; padding: 12px; border-radius: 6px; font-family: monospace; max-height: 180px; overflow-y: auto; font-size: 12px; color: #a6e3a1; line-height: 1.5; }
@@ -38,7 +39,8 @@
             <h3>🔑 Endereçamento ECDSA e Chaves Ativas</h3>
             <button onclick="gerarNovaCarteira()">Criar Nova Carteira (ECDSA)</button>
             <div id="resultado-carteira" style="display:none; margin-top:10px;">
-                <p><strong>Seu Endereço Público:</strong> <div id="addr" class="key-box"></div></p>
+                <p><strong>Seu Endereço Público:</strong> <div id="addr" class="key-box"></div>
+                <button id="btn-copiar-endereco" class="copy-button" onclick="copiarEnderecoRecebimento()">📋 Copiar endereço de recebimento</button></p>
                 <p><strong>Sua Chave Privada:</strong> <div id="s_key" class="key-box"></div></p>
                 <p><strong>Sua Chave Pública:</strong> <div id="p_key" class="key-box"></div></p>
                 <p><strong>Saldo no Livro-Razão:</strong> <div id="saldo-atual" class="balance-txt">0.00 BRN</div></p>
@@ -139,6 +141,23 @@
             document.getElementById('p_key').innerText = pk;
             document.getElementById('tx-sender').value = addr;
             atualizarTela();
+        }
+
+        async function copiarEnderecoRecebimento() {
+            const endereco = document.getElementById('addr').innerText.trim();
+            if (!endereco) {
+                alert('Crie ou importe uma carteira antes de copiar o endereço.');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(endereco);
+                const botao = document.getElementById('btn-copiar-endereco');
+                const textoOriginal = botao.innerText;
+                botao.innerText = '✅ Endereço copiado';
+                setTimeout(() => { botao.innerText = textoOriginal; }, 1800);
+            } catch (erro) {
+                alert('Não foi possível copiar automaticamente. Copie o endereço exibido acima.');
+            }
         }
 
         function salvarCarteiraFisica() {
