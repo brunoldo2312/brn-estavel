@@ -6,6 +6,7 @@ Uso:
     python main.py <porta> --miner      -> Nó + explorador + mineração automática
     python main.py <porta> --cli        -> Modo CLI (sem GUI)
 """
+
 import sys
 import os
 import time
@@ -13,9 +14,6 @@ import threading
 
 from bruno_blockchain_v2 import CriptoAPI, COIN_NAME, COIN_SYMBOL
 from cripto_wallet_v2 import Wallet, encrypt_wallet, decrypt_wallet
-
-# Token do Ngrok via variável de ambiente (NUNCA no código!)
-NGROK_AUTHTOKEN = os.environ.get("NGROK_AUTHTOKEN", "")
 
 
 def start_explorer_subprocess(db_path):
@@ -88,6 +86,10 @@ def main():
         except Exception as e:
             print(f"[CARTEIRA] Backup não salvo: {e}")
 
+    # Injeta a carteira no api (para GUI e CLI)
+    api.wallet = wallet
+    api.wallet_address = wallet.address
+
     # Inicia explorador
     db_path = f"brn_v2_chain_{port}.db"
     explorer_proc = start_explorer_subprocess(db_path)
@@ -101,6 +103,7 @@ def main():
         except KeyboardInterrupt:
             pass
         explorer_proc.terminate()
+        api.p2p.stop()
         return
 
     # Modo mineração automática
@@ -129,6 +132,7 @@ def main():
             pass
     finally:
         explorer_proc.terminate()
+        api.p2p.stop()
 
 
 if __name__ == "__main__":
