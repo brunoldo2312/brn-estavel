@@ -1,147 +1,135 @@
-import hashlib
-import json
+"""
+main.py
+Executor unificado da BRN v2.
+Uso:
+    python main.py <porta>              -> Inicia nó + explorador + GUI
+    python main.py <porta> --miner      -> Nó + explorador + mineração automática
+    python main.py <porta> --cli        -> Modo CLI (sem GUI)
+"""
+import sys
 import os
 import time
-import uuid
-from typing import Any, Dict, List
+import threading
 
-# ==========================================
-# 1. GERENCIADOR DO LEDGER (L2)
-# ==========================================
-class LedgerManager:
-    def __init__(self, data_folder: str = "data"):
-        self.data_folder = data_folder
-        self.ledger_path = os.path.join(data_folder, "ledger.json")
-        self.reserve_path = os.path.join(data_folder, "collateral_reserve.json")
-        self._ensure_files_exist()
+from bruno_blockchain_v2 import CriptoAPI, COIN_NAME, COIN_SYMBOL
+from cripto_wallet_v2 import Wallet, encrypt_wallet, decrypt_wallet
 
-    def _ensure_files_exist(self):
-        os.makedirs(self.data_folder, exist_ok=True)
-        if not os.path.exists(self.ledger_path):
-            initial_data = {
-                "network": "BRN-L2",
-                "pending_transactions": [
-                    {"tx_id": "tx001", "sender": "Alice", "receiver": "Bob", "amount": 100.0, "status": "pending"},
-                    {"tx_id": "tx002", "sender": "Bob", "receiver": "Charlie", "amount": 25.5, "status": "pending"}
-                ],
-                "processed_batches": []
-            }
-            self.save_json(self.ledger_path, initial_data)
-        if not os.path.exists(self.reserve_path):
-            initial_reserve = {"asset": "BRN-Estavel", "peg_usd": 1.00, "total_supply": 1000.0, "collateral_usd": 1000.0}
-            self.save_json(self.reserve_path, initial_reserve)
-
-    def load_json(self, path: str) -> Dict[str, Any]:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def save_json(self, path: str, data: Dict[str, Any]):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-
-    def get_pending_transactions(self) -> List[Dict[str, Any]]:
-        data = self.load_json(self.ledger_path)
-        return data.get("pending_transactions", [])
-
-    def mark_transactions_as_anchored(self, batch_id: str, merkle_root: str, btc_txid: str):
-        data = self.load_json(self.ledger_path)
-        pending = data.get("pending_transactions", [])
-        if not pending:
-            return
-        batch_record = {
-            "batch_id": batch_id,
-            "merkle_root": merkle_root,
-            "bitcoin_txid": btc_txid,
-            "tx_count": len(pending),
-            "transactions": pending
-        }
-        data["processed_batches"].append(batch_record)
-        data["pending_transactions"] = []
-        self.save_json(self.ledger_path, data)
+# Token do Ngrok via variável de ambiente (NUNCA no código!)
+NGROK_AUTHTOKEN = os.environ.get("NGROK_AUTHTOKEN", "")
 
 
-# ==========================================
-# 2. SEQUENCIADOR DO ROLLUP (ÁRVORE DE MERKLE)
-# ==========================================
-class RollupSequencer:
-    @staticmethod
-    def calculate_merkle_root(transactions: list) -> str:
-        if not transactions:
-            return ""
-        hashes = [
-            hashlib.sha256(json.dumps(tx, sort_keys=True).encode("utf-8")).hexdigest()
-            for tx in transactions
-        ]
-        while len(hashes) > 1:
-            if len(hashes) % 2 != 0:
-                hashes.append(hashes[-1])
-            new_level = []
-            for i in range(0, len(hashes), 2):
-                combined = hashes[i] + hashes[i + 1]
-                new_level.append(hashlib.sha256(combined.encode("utf-8")).hexdigest())
-            hashes = new_level
-        return hashes[0]
+def start_explorer_subprocess(db_path):
+    import subprocess
+    return subprocess.Popen(
+        [sys.executable, "explorer.py", db_path],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
 
 
-# ==========================================
-# 3. ANCORAGEM NO BITCOIN (OP_RETURN)
-# ==========================================
-class BitcoinAnchor:
-    def __init__(self, network: str = "testnet"):
-        self.network = network
+def cli_mode(api, wallet):
+    print(f"\n{COIN_NAME} ({COIN_SYMBOL}) - Modo CLI")
+    print(f"Carteira: {wallet.address}\n")
+    while True:
+        cmd = input("brn> ").strip().split()
+        if not cmd:
+            continue
+        if cmd[0] == "status":
+            s = api.get_status()
+            for k, v in s.items():
+                print(f"  {k}: {v}")
+        elif cmd[0] == "miner" and len(cmd) > 1 and cmd[1] == "start":
+            ok, msg = api.start_mining(wallet.address)
+            print(f"  {msg}")
+        elif cmd[0] == "miner" and len(cmd) > 1 and cmd[1] == "stop":
+            ok, msg = api.stop_mining()
+            print(f"  {msg}")
+        elif cmd[0] == "balance":
+            print(f"  Saldo: {api.get_balance(wallet.address)} BRN")
+        elif cmd[0] == "send" and len(cmd) >= 3:
+            to_addr, amount = cmd[1], cmd[2]
+            tx, msg = api.create_transaction(wallet, to_addr, amount)
+            if tx:
+                ok, m = api.submit_transaction(tx)
+                print(f"  {m}")
+            else:
+                print(f"  {msg}")
+        elif cmd[0] == "chain":
+            chain = api.get_full_chain()
+            for b in chain[-10:]:
+                print(f"  #{b['height']} {b['hash'][:24]}... diff={b['difficulty']}")
+        elif cmd[0] == "exit":
+            break
+        else:
+            print("  Comandos: status | miner start | miner stop | balance | send <addr> <amt> | chain | exit")
 
-    def build_op_return_data(self, merkle_root: str) -> str:
-        return f"BRN:{merkle_root[:32]}"
 
-    def anchor_to_bitcoin(self, merkle_root: str, wallet_name: str = "main_wallet") -> str:
-        payload = self.build_op_return_data(merkle_root)
+def main():
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 6001
+    api = CriptoAPI(port)
+
+    # Carteira: carrega ou cria
+    wallet_path = f"wallets/wallet_{port}.wallet"
+    os.makedirs("wallets", exist_ok=True)
+    if os.path.exists(wallet_path):
         try:
-            from bitcoinlib.wallets import Wallet
-            w = Wallet(wallet_name)
-            tx = w.send_to(outputs=[(None, 0)], data=payload.encode('utf-8'), fee=1000)
-            return tx.txid
-        except Exception:
-            simulated_txid = hashlib.sha256(f"{payload}{time.time()}".encode()).hexdigest()
-            print(f"[Aviso] Executando em modo simulação (Sem conexão RPC ativa com o Bitcoin).")
-            print(f"[BTC Anchor] Payload OP_RETURN preparado: {payload}")
-            return simulated_txid
+            pwd = input("Senha da carteira: ")
+            wallet = decrypt_wallet(wallet_path, pwd)
+        except Exception as e:
+            print(f"Erro ao abrir carteira: {e}")
+            wallet = Wallet()
+    else:
+        wallet = Wallet()
+        print(f"[CARTEIRA] Nova carteira criada: {wallet.address}")
+        try:
+            pwd = input("Defina uma senha (mín 12 chars) para backup: ")
+            if len(pwd) >= 12:
+                encrypt_wallet(wallet, pwd, wallet_path)
+                print(f"[CARTEIRA] Backup salvo em {wallet_path}")
+        except Exception as e:
+            print(f"[CARTEIRA] Backup não salvo: {e}")
 
+    # Inicia explorador
+    db_path = f"brn_v2_chain_{port}.db"
+    explorer_proc = start_explorer_subprocess(db_path)
+    time.sleep(1)
+    print(f"[EXPLORADOR] http://127.0.0.1:8080")
 
-# ==========================================
-# 4. PIPELINE PRINCIPAL DE EXECUÇÃO
-# ==========================================
-def run_pipeline():
-    print("==================================================")
-    print("      SISTEMA BRN-ESTAVEL: ENGINE DE ROLLUP       ")
-    print("==================================================")
-    
-    # Inicializa o gerenciador de dados locais
-    ledger = LedgerManager()
-    
-    # Obtém transações da Camada 2 pendentes
-    pending_txs = ledger.get_pending_transactions()
-    if not pending_txs:
-        print("[!] Nenhuma transação pendente encontrada no ledger.json.")
+    # Modo CLI
+    if "--cli" in sys.argv:
+        try:
+            cli_mode(api, wallet)
+        except KeyboardInterrupt:
+            pass
+        explorer_proc.terminate()
         return
-        
-    print(f"[+] Transações pendentes carregadas: {len(pending_txs)} item(ns).")
-    
-    # Executa a compressão via Raiz de Merkle
-    merkle_root = RollupSequencer.calculate_merkle_root(pending_txs)
-    print(f"[+] Raiz de Merkle calculada para o Rollup:")
-    print(f"    -> Merkle Root: {merkle_root}")
-    
-    # Ancora a prova de estado no Bitcoin (Camada 1)
-    print("\n[+] Ancorando o estado no Bitcoin...")
-    anchor = BitcoinAnchor(network="testnet")
-    btc_txid = anchor.anchor_to_bitcoin(merkle_root)
-    print(f"    -> Bitcoin TXID: {btc_txid}")
-    
-    # Finaliza o lote e limpa o ledger de pendentes
-    batch_id = f"batch_{str(uuid.uuid4())[:8]}"
-    ledger.mark_transactions_as_anchored(batch_id, merkle_root, btc_txid)
-    print(f"\n[+] Sucesso! Lote '{batch_id}' gravado e ledger.json atualizado.")
+
+    # Modo mineração automática
+    if "--miner" in sys.argv:
+        api.start_mining(wallet.address)
+        print(f"[MINERAÇÃO] Automática ativa para {wallet.address}")
+
+    # Modo GUI (pywebview)
+    try:
+        import webview
+        html_path = os.path.abspath("index.html")
+        window = webview.create_window(
+            f"{COIN_NAME} v2 - Nó {port}",
+            f"file://{html_path}",
+            js_api=api,
+            width=1100, height=750
+        )
+        webview.start()
+    except ImportError:
+        print("[AVISO] pywebview não instalado. Rodando em modo servidor.")
+        print(f"Nó ativo na porta {port}. Use Ctrl+C para sair.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+    finally:
+        explorer_proc.terminate()
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    main()
