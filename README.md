@@ -1,3 +1,13 @@
+pip install -r requirements.txt
+
+# Nó simples
+python node.py 6001 blockchain_node_6001.db
+
+# Nó minerando para um endereço
+python node.py 6001 blockchain_node_6001.db brn1qxyzk7y0v2j4g0a8d9n5t3m2k7h4s6w8c9p2e --mine
+
+# Nó + explorador + navegador
+python main.py --port 6001 --miner brn1qxyzk7y0v2j4g0a8d9n5t3m2k7h4s6w8c9p2e --mine --explorer --open-browser
 📖 Manual de Execução — Moeda Bruno v2 (BRN)
 
 Este manual cobre desde a instalação do ambiente até a execução completa do nó, mineração, explorador de blocos e exposição pública via Ngrok. Siga na ordem apresentada.
