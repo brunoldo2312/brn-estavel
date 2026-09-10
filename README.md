@@ -1,3 +1,8 @@
+No Windows, abra o Prompt de Comando dentro da pasta do projeto e execute:
+py -m venv env
+env\Scripts\activate
+pip install ecdsa cryptography pywebview PyQt6 PyQt6-WebEngine
+python bruno_blockchain_real.py 6001
 Manual da Carteira BRN
 
 Instalação, recebimento, transferências e testes entre computadores
