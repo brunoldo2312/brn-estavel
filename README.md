@@ -1,3 +1,6 @@
+pip install cryptography && taskkill /F /IM python.exe 2>nul & python bruno_blockchain_real.py 6002
+
+
 # 💼 Moeda Bruno (BRN) - Carteira Avançada & Blockchain P2P
 
 A **Moeda Bruno (BRN)** é uma implementação experimental de um ecossistema de criptomoeda descentralizado baseado em princípios acadêmicos do protocolo *CryptoNote/Monero*. O projeto apresenta uma arquitetura modular com um livro-razão imutável, sincronização autônoma de nós Peer-to-Peer (P2P), propagação de transações via Mempool Broadcast e um utilitário automático de redirecionamento de portas (UPnP).
