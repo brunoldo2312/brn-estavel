@@ -1,332 +1,163 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <meta charset="UTF-8">
-    <title>Bruno Wallet GUI Advanced</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #1e1e2e; color: #cdd6f4; padding: 20px; margin: 0; }
-        .container { max-width: 700px; margin: auto; background: #313244; padding: 25px; border-radius: 12px; }
-        h1 { color: #f5c2e7; text-align: center; margin-top: 0; }
-        .card { background: #45475a; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #a6e3a1; }
-        .card.transfer { border-left-color: #f9e2af; }
-        .card.wallet-io { border-left-color: #89b4fa; }
-        .card.network-io { border-left-color: #f5e0dc; }
-        button { background: #89b4fa; color: #11111b; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 14px; margin-bottom: 5px; }
-        button:hover { background: #b4befe; }
-        button.active-mining { background: #f38ba8; color: #11111b; }
-        button.copy-button { width: auto; padding: 7px 10px; margin-top: 6px; background: #a6e3a1; font-size: 12px; }
-        input { width: 96%; padding: 10px; background: #1e1e2e; border: 1px solid #585b70; border-radius: 6px; color: #cdd6f4; margin-bottom: 10px; font-family: monospace; }
-        .key-box { background: #181825; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 11px; word-break: break-all; margin-top: 5px; color: #fab387; }
-        .log-box { background: #11111b; padding: 12px; border-radius: 6px; font-family: monospace; max-height: 180px; overflow-y: auto; font-size: 12px; color: #a6e3a1; line-height: 1.5; }
-        .balance-txt { font-weight: bold; color: #a6e3a1; font-size: 16px; margin-top: 5px; }
-        .card.statement { border-left-color: #94e2d5; }
-        .tx-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #585b70; font-size: 13px; }
-        .tx-row:last-child { border-bottom: none; }
-        .tx-in { color: #a6e3a1; }
-        .tx-out { color: #f38ba8; }
-        .tx-meta { color: #bac2de; font-size: 11px; font-family: monospace; margin-top: 2px; }
-        .tx-summary { font-size: 12px; margin-bottom: 8px; color: #cdd6f4; }
-        .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; background: #585b70; color: #cdd6f4; white-space: nowrap; }
-        .badge.pending { background: #f9e2af; color: #11111b; }
-        .peer-chip { display: inline-block; background: #181825; border: 1px solid #585b70; border-radius: 12px; padding: 2px 8px; margin: 2px; font-family: monospace; font-size: 11px; color: #89b4fa; }
-        .empty { color: #7f849c; font-style: italic; padding: 6px 2px; font-size: 12px; }
-        .statement-scroll { max-height: 320px; overflow-y: auto; }
-    </style>
+<meta charset="UTF-8">
+<title>Moeda Bruno v2</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #121212; color: #e0e0e0;
+           font-family: 'Segoe UI', Roboto, sans-serif; padding: 20px; }
+    h1 { color: #00ffcc; text-align: center; margin-bottom: 5px; font-size: 1.6em; }
+    .subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 0.9em; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 1100px;
+            margin: 0 auto; }
+    .card { background: #1e1e1e; border: 1px solid #333; border-radius: 10px;
+            padding: 18px; }
+    .card h2 { color: #ffaa00; font-size: 1em; margin-bottom: 12px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat { background: #161616; padding: 10px; border-radius: 6px; }
+    .stat .v { color: #00ffcc; font-size: 1.2em; font-weight: bold; }
+    .stat .l { color: #888; font-size: 0.7em; text-transform: uppercase; }
+    input, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #333;
+                    background: #161616; color: #e0e0e0; margin-top: 8px;
+                    font-family: inherit; font-size: 0.9em; }
+    button { background: #00ffcc; color: #121212; font-weight: bold;
+             cursor: pointer; transition: 0.2s; }
+    button:hover { background: #00ccaa; }
+    button.danger { background: #ff3355; color: #fff; }
+    button.danger:hover { background: #cc2244; }
+    .addr { background: #161616; padding: 10px; border-radius: 6px;
+            word-break: break-all; font-family: monospace; font-size: 0.75em;
+            color: #00ffcc; margin-bottom: 8px; }
+    .log { background: #0a0a0a; padding: 10px; border-radius: 6px; height: 180px;
+           overflow-y: auto; font-family: monospace; font-size: 0.75em;
+           color: #00ffcc; }
+    .row { display: flex; gap: 10px; margin-top: 8px; }
+    .row button { margin-top: 0; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>💼 Carteira Avançada Bruno</h1>
-        
-        <div class="card network-io">
-            <h3>🌐 Rede Descentralizada (P2P Sync)</h3>
-            <p>Seu endereço local de escuta: <span id="p2p-local-info" style="color: #fab387; font-family: monospace;">Carregando...</span></p>
-            <div id="p2p-lan-info" style="margin-bottom:8px;"></div>
-            <p style="margin:6px 0;">Pares conectados: <b id="peer-count" style="color:#a6e3a1;">0</b></p>
-            <div id="peer-list" style="margin-bottom:10px;"></div>
-            <label>Conectar ao IP do Nó Remoto:</label>
-            <input type="text" id="peer-ip" value="127.0.0.1" placeholder="Ex: 192.168.0.17">
-            <label>Porta do Nó Remoto:</label>
-            <input type="number" id="peer-port" placeholder="Ex: 6001">
-            <button style="background:#f5e0dc; color: #11111b;" onclick="conectarEEnviarBlocos()">Conectar e Sincronizar Cadeia</button>
-        </div>
+    <h1>⛓️ Moeda Bruno v2</h1>
+    <div class="subtitle">PoW + Halving + UTXO + Merkle Root</div>
 
+    <div class="grid">
+        <!-- Carteira -->
         <div class="card">
-            <h3>🔑 Endereçamento ECDSA e Chaves Ativas</h3>
-            <button onclick="gerarNovaCarteira()">Criar Nova Carteira (ECDSA)</button>
-            <div id="resultado-carteira" style="display:none; margin-top:10px;">
-                <p><strong>Seu Endereço Público:</strong> <div id="addr" class="key-box"></div>
-                <button id="btn-copiar-endereco" class="copy-button" onclick="copiarEnderecoRecebimento()">📋 Copiar endereço de recebimento</button></p>
-                <p><strong>Sua Chave Privada:</strong> <div id="s_key" class="key-box"></div></p>
-                <p><strong>Sua Chave Pública:</strong> <div id="p_key" class="key-box"></div></p>
-                <p><strong>Saldo no Livro-Razão:</strong> <div id="saldo-atual" class="balance-txt">0.00 BRN</div></p>
+            <h2>💼 Carteira</h2>
+            <div class="addr" id="addr">Carregando...</div>
+            <button onclick="copyAddr()">📋 Copiar Endereço</button>
+            <div class="stats" style="margin-top:12px;">
+                <div class="stat"><div class="v" id="balance">0</div><div class="l">Saldo BRN</div></div>
+                <div class="stat"><div class="v" id="height">0</div><div class="l">Altura</div></div>
             </div>
         </div>
 
-        <div class="card wallet-io">
-            <h3>💾 Persistência (.wallet Criptografado)</h3>
-            <label>Nome do Arquivo:</label>
-            <input type="text" id="wallet-filename" placeholder="Ex: minha_carteira">
-            <label>Senha de Criptografia:</label>
-            <input type="password" id="wallet-password" placeholder="Mínimo de 12 caracteres...">
-            <div class="empty" style="padding:0 2px 8px;">A senha precisa ter <b>pelo menos 12 caracteres</b> para gerar o backup criptografado.</div>
-            <button style="background:#b4befe;" onclick="salvarCarteiraFisica()">Exportar e Criptografar Backup</button>
-            <button style="background:#cba6f7;" onclick="carregarCarteiraFisica()">Importar e Descriptografar</button>
-        </div>
-
-        <div class="card transfer">
-            <h3>💸 Transferência com Assinatura Digital</h3>
-            <label>Endereço de Origem (Remetente):</label>
-            <input type="text" id="tx-sender" placeholder="Cole seu brn1...">
-            <label>Endereço de Destino (Destinatário):</label>
-            <input type="text" id="tx-receiver" placeholder="brn1...">
-            <label>Quantia a Enviar:</label>
-            <input type="number" id="tx-amount" step="any" placeholder="0.00">
-            <button style="background:#f9e2af; color:#11111b;" onclick="transferirMoedas()">Assinar e Enviar Transação</button>
-        </div>
-
+        <!-- Status da Rede -->
         <div class="card">
-            <h3>⛏️ Mineração Contínua em Background</h3>
-            <button id="btn-mineracao" style="background:#a6e3a1; color:#11111b;" onclick="alternarMineracao()">Iniciar Mineração Contínua</button>
-        </div>
-
-        <div class="card statement">
-            <h3>📜 Extrato da Carteira (Envios e Recebimentos)</h3>
-            <div id="extrato-resumo" class="tx-summary">—</div>
-            <div id="extrato-lista" class="statement-scroll">
-                <span class="empty">Crie ou importe uma carteira para ver o extrato.</span>
+            <h2>🌐 Status da Rede</h2>
+            <div class="stats">
+                <div class="stat"><div class="v" id="difficulty">0</div><div class="l">Dificuldade</div></div>
+                <div class="stat"><div class="v" id="reward">0</div><div class="l">Recompensa</div></div>
+                <div class="stat"><div class="v" id="mined">0</div><div class="l">Total Minerado</div></div>
+                <div class="stat"><div class="v" id="mempool">0</div><div class="l">Mempool</div></div>
+            </div>
+            <div class="row">
+                <button onclick="startMining()" id="btnMine">⛏️ Minerar</button>
+                <button class="danger" onclick="stopMining()">⏹️ Parar</button>
             </div>
         </div>
 
-        <h3>🗒️ Estado Atual da Blockchain</h3>
-        <div id="logs" class="log-box">Carregando livro-razão...</div>
+        <!-- Enviar -->
+        <div class="card">
+            <h2>💸 Enviar BRN</h2>
+            <input id="toAddr" placeholder="Endereço de destino (brn1...)">
+            <input id="amount" placeholder="Quantidade (ex: 1.5)">
+            <input id="fee" placeholder="Taxa (padrão 0.0001)" value="0.0001">
+            <button onclick="sendTx()">Enviar Transação</button>
+        </div>
+
+        <!-- Log -->
+        <div class="card">
+            <h2>📜 Log</h2>
+            <div class="log" id="log"></div>
+        </div>
     </div>
 
-    <script>
-        let isMiningActive = false;
+<script>
+    let api = null;
+    let walletAddress = "";
 
-        function atualizarTela() {
-            window.pywebview.api.get_full_chain().then(function(data) {
-                const logs = document.getElementById('logs');
-                logs.innerHTML = `<b>Comprimento:</b> ${data.length} blocos | <b>Mempool:</b> ${data.mempool_size} | <b>Dificuldade Atual:</b> ${data.current_difficulty}<br><br>`;
-                data.chain.slice().reverse().forEach(function(b) {
-                    logs.innerHTML += `<b>[Bloco #${b.index}]</b> Hash: ${b.hash.substring(0,22)}... (Diff: ${b.difficulty})<br>`;
-                    b.transactions.forEach(function(tx) {
-                        logs.innerHTML += ` &nbsp;&nbsp;&rarr; Envio: ${tx.amount} BRN (${tx.sender.substring(0,10)}... para ${tx.receiver.substring(0,10)}...)<br>`;
-                    });
-                });
-                
-                isMiningActive = data.is_mining;
-                const btn = document.getElementById('btn-mineracao');
-                if (isMiningActive) {
-                    btn.innerText = "⏹️ Parar Mineração Contínua";
-                    btn.className = "active-mining";
-                } else {
-                    btn.innerText = "⛏️ Iniciar Mineração Contínua";
-                    btn.className = "";
-                }
+    function log(msg) {
+        const el = document.getElementById("log");
+        const t = new Date().toLocaleTimeString();
+        el.innerHTML = `[${t}] ${msg}<br>` + el.innerHTML;
+    }
 
-                const currentAddr = document.getElementById('addr').innerText;
-                if(currentAddr) {
-                    window.pywebview.api.get_balance(currentAddr).then(function(res) {
-                        if(res.balance !== undefined) {
-                            document.getElementById('saldo-atual').innerText = `${res.balance.toFixed(2)} BRN`;
-                        }
-                    });
-                }
-
-                atualizarPeers();
-                atualizarExtrato();
-            });
-        }
-
-        function carregarInfoP2P() {
-            window.pywebview.api.get_local_ips().then(function(info) {
-                document.getElementById('p2p-local-info').innerText = info.loopback;
-                const lanBox = document.getElementById('p2p-lan-info');
-                if (info.lan_addresses && info.lan_addresses.length) {
-                    lanBox.innerHTML = '<b style="font-size:12px;">Endereços na rede (informe ao outro computador):</b><br>' +
-                        info.lan_addresses.map(function(a) { return `<span class="peer-chip">${a}</span>`; }).join('');
-                } else {
-                    lanBox.innerHTML = '<span class="empty">Nenhum endereço de LAN detectado.</span>';
-                }
-            });
-        }
-
-        function atualizarPeers() {
-            window.pywebview.api.get_connected_peers().then(function(res) {
-                document.getElementById('peer-count').innerText = res.count;
-                const list = document.getElementById('peer-list');
-                if (res.peers && res.peers.length) {
-                    list.innerHTML = res.peers.map(function(p) {
-                        return `<span class="peer-chip">🟢 ${p.ip}:${p.port}</span>`;
-                    }).join('');
-                } else {
-                    list.innerHTML = '<span class="empty">Nenhum par conectado. Clique em "Conectar e Sincronizar" (nos dois computadores) ou configure bootstrap_peers.json.</span>';
-                }
-            });
-        }
-
-        function atualizarExtrato() {
-            const addr = (document.getElementById('addr').innerText || '').trim();
-            const box = document.getElementById('extrato-lista');
-            const resumo = document.getElementById('extrato-resumo');
-            if (!addr) {
-                resumo.innerText = '—';
-                box.innerHTML = '<span class="empty">Crie ou importe uma carteira para ver o extrato.</span>';
-                return;
+    async function refresh() {
+        if (!api) return;
+        try {
+            const s = await api.get_status();
+            document.getElementById("height").innerText = s.height;
+            document.getElementById("difficulty").innerText = s.difficulty;
+            document.getElementById("reward").innerText = s.reward;
+            document.getElementById("mined").innerText = s.total_mined;
+            document.getElementById("mempool").innerText = s.mempool_size;
+            if (walletAddress) {
+                const bal = await api.get_balance(walletAddress);
+                document.getElementById("balance").innerText = bal;
             }
-            window.pywebview.api.get_transaction_history(addr).then(function(res) {
-                if (res.status !== 'sucesso') {
-                    resumo.innerText = '—';
-                    box.innerHTML = `<span class="empty">${res.message || 'Erro ao carregar o extrato.'}</span>`;
-                    return;
-                }
-                const h = res.history || [];
-                const totalIn = h.filter(function(e) { return e.direction === 'entrada'; }).reduce(function(s, e) { return s + e.amount; }, 0);
-                const totalOut = h.filter(function(e) { return e.direction === 'saida'; }).reduce(function(s, e) { return s + e.amount; }, 0);
-                resumo.innerHTML = `<span class="tx-in">▲ Entradas: ${totalIn.toFixed(2)} BRN</span> &nbsp;|&nbsp; <span class="tx-out">▼ Saídas: ${totalOut.toFixed(2)} BRN</span> &nbsp;|&nbsp; ${h.length} lançamento(s)`;
-                if (!h.length) {
-                    box.innerHTML = '<span class="empty">Nenhuma transação encontrada para este endereço.</span>';
-                    return;
-                }
-                const labels = { genese: 'Gênese', mineracao: 'Mineração', recebido: 'Recebido', enviado: 'Enviado' };
-                box.innerHTML = h.map(function(e) {
-                    const isIn = e.direction === 'entrada';
-                    const cls = isIn ? 'tx-in' : 'tx-out';
-                    const arrow = isIn ? '⬇️' : '⬆️';
-                    const sign = isIn ? '+' : '−';
-                    const when = e.timestamp ? new Date(e.timestamp * 1000).toLocaleString() : '—';
-                    const badge = e.status === 'pendente'
-                        ? '<span class="badge pending">pendente</span>'
-                        : `<span class="badge">bloco #${e.block_index} · ${e.confirmations} conf.</span>`;
-                    const cp = (e.counterparty || '—');
-                    const cpShort = cp.length > 20 ? cp.substring(0, 20) + '…' : cp;
-                    return `<div class="tx-row">
-                        <div>
-                            <div class="${cls}">${arrow} ${labels[e.type] || e.type} &nbsp;<b>${sign}${e.amount.toFixed(2)} BRN</b></div>
-                            <div class="tx-meta">${isIn ? 'de' : 'para'} ${cpShort} · ${when}</div>
-                        </div>
-                        <div>${badge}</div>
-                    </div>`;
-                }).join('');
-            });
+        } catch (e) {
+            log("Erro ao atualizar: " + e);
         }
+    }
 
-        function conectarEEnviarBlocos() {
-            const ip = document.getElementById('peer-ip').value;
-            const port = document.getElementById('peer-port').value;
-            if(!port) { alert("Insira a porta P2P!"); return; }
-            window.pywebview.api.connect_and_sync(ip, parseInt(port)).then(function(res) {
-                alert(res.message);
-                atualizarTela();
-            });
+    async function startMining() {
+        if (!walletAddress) { log("Endereço da carteira não carregado."); return; }
+        const r = await api.start_mining(walletAddress);
+        log("Mineração: " + (r[1] || r));
+    }
+
+    async function stopMining() {
+        const r = await api.stop_mining();
+        log("Parar: " + (r[1] || r));
+    }
+
+    async function sendTx() {
+        const to = document.getElementById("toAddr").value.trim();
+        const amt = document.getElementById("amount").value.trim();
+        const fee = document.getElementById("fee").value.trim() || "0.0001";
+        if (!to || !amt) { log("Preencha endereço e quantidade."); return; }
+        log(`Enviando ${amt} BRN para ${to}...`);
+        // A criação da transação é feita no backend via wallet.
+        // Aqui enviamos os dados para o Python processar.
+        try {
+            const result = await api.send_from_gui(to, amt, fee);
+            log(result);
+        } catch (e) {
+            log("Erro no envio: " + e);
         }
+    }
 
-        function gerarNovaCarteira() {
-            window.pywebview.api.generate_wallet().then(function(data) {
-                mostrarChavesNaTela(data.address, data.spend_secret_key, data.public_key);
-            });
+    function copyAddr() {
+        if (!walletAddress) return;
+        navigator.clipboard.writeText(walletAddress);
+        log("Endereço copiado.");
+    }
+
+    window.addEventListener("pywebviewready", async () => {
+        api = window.pywebview.api;
+        // Obtém endereço da carteira via método exposto
+        try {
+            const info = await api.get_wallet_info();
+            walletAddress = info.address;
+            document.getElementById("addr").innerText = walletAddress;
+            log("Carteira carregada: " + walletAddress);
+        } catch (e) {
+            log("Erro ao obter carteira: " + e);
         }
-
-        function mostrarChavesNaTela(addr, sk, pk) {
-            document.getElementById('resultado-carteira').style.display = 'block';
-            document.getElementById('addr').innerText = addr;
-            document.getElementById('s_key').innerText = sk;
-            document.getElementById('p_key').innerText = pk;
-            document.getElementById('tx-sender').value = addr;
-            atualizarTela();
-        }
-
-        async function copiarEnderecoRecebimento() {
-            const endereco = document.getElementById('addr').innerText.trim();
-            if (!endereco) {
-                alert('Crie ou importe uma carteira antes de copiar o endereço.');
-                return;
-            }
-            try {
-                await navigator.clipboard.writeText(endereco);
-                const botao = document.getElementById('btn-copiar-endereco');
-                const textoOriginal = botao.innerText;
-                botao.innerText = '✅ Endereço copiado';
-                setTimeout(() => { botao.innerText = textoOriginal; }, 1800);
-            } catch (erro) {
-                alert('Não foi possível copiar automaticamente. Copie o endereço exibido acima.');
-            }
-        }
-
-        function salvarCarteiraFisica() {
-            const filename = document.getElementById('wallet-filename').value.trim();
-            const password = document.getElementById('wallet-password').value;
-            const address = document.getElementById('addr').innerText;
-            const spend_key = document.getElementById('s_key').innerText;
-            const pub_key = document.getElementById('p_key').innerText;
-
-            if (!filename || !password || !address) {
-                alert("Gere uma carteira e defina nome/senha para exportar!");
-                return;
-            }
-            if (password.length < 12) {
-                alert("A senha precisa ter pelo menos 12 caracteres. Atualmente tem " + password.length + ".");
-                return;
-            }
-            window.pywebview.api.save_encrypted_wallet(filename, password, address, spend_key, pub_key).then(function(res) {
-                alert((res.status === "sucesso" ? "✅ " : "⚠️ ") + res.message);
-            });
-        }
-
-        function carregarCarteiraFisica() {
-            const filename = document.getElementById('wallet-filename').value;
-            const password = document.getElementById('wallet-password').value;
-            if (!filename || !password) {
-                alert("Insira o nome do arquivo e a senha!");
-                return;
-            }
-            window.pywebview.api.load_encrypted_wallet(filename, password).then(function(res) {
-                if (res.status === "sucesso") {
-                    alert("Carteira carregada com sucesso!");
-                    mostrarChavesNaTela(res.address, res.spend_secret_key, res.public_key);
-                } else {
-                    alert(res.message);
-                }
-            });
-        }
-
-        function transferirMoedas() {
-            const sender = document.getElementById('tx-sender').value;
-            const receiver = document.getElementById('tx-receiver').value;
-            const amount = document.getElementById('tx-amount').value;
-            const sk = document.getElementById('s_key').innerText;
-            const pk = document.getElementById('p_key').innerText;
-
-            if(!sk || !pk) {
-                alert("A carteira de origem precisa estar carregada para assinar a transação!");
-                return;
-            }
-
-            window.pywebview.api.send_funds(sender, receiver, amount, sk, pk).then(function(res) {
-                alert(res.message);
-                atualizarTela();
-            });
-        }
-
-        function alternarMineracao() {
-            const currentAddr = document.getElementById('addr').innerText;
-            if (!currentAddr) {
-                alert("Crie ou carregue uma carteira antes de iniciar a mineração para receber as recompensas!");
-                return;
-            }
-            
-            window.pywebview.api.toggle_continuous_mining(currentAddr).then(function(res) {
-                alert(res.message);
-                atualizarTela();
-            });
-        }
-
-        window.addEventListener('pywebviewready', function() {
-            carregarInfoP2P();
-            atualizarTela();
-            setInterval(atualizarTela, 3000); // Polling contínuo para manter interface atualizada
-        });
-    </script>
+        refresh();
+        setInterval(refresh, 3000);
+    });
+</script>
 </body>
 </html>
