@@ -1,160 +1,92 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Moeda Bruno v2</title>
+<meta charset="utf-8" />
+<title>BRN — Explorador</title>
 <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #121212; color: #e0e0e0;
-           font-family: 'Segoe UI', Roboto, sans-serif; padding: 20px; }
-    h1 { color: #00ffcc; text-align: center; margin-bottom: 5px; font-size: 1.6em; }
-    .subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 0.9em; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 1100px;
-            margin: 0 auto; }
-    .card { background: #1e1e1e; border: 1px solid #333; border-radius: 10px;
-            padding: 18px; }
-    .card h2 { color: #ffaa00; font-size: 1em; margin-bottom: 12px; }
-    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .stat { background: #161616; padding: 10px; border-radius: 6px; }
-    .stat .v { color: #00ffcc; font-size: 1.2em; font-weight: bold; }
-    .stat .l { color: #888; font-size: 0.7em; text-transform: uppercase; }
-    input, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #333;
-                    background: #161616; color: #e0e0e0; margin-top: 8px;
-                    font-family: inherit; font-size: 0.9em; }
-    button { background: #00ffcc; color: #121212; font-weight: bold;
-             cursor: pointer; transition: 0.2s; }
-    button:hover { background: #00ccaa; }
-    button.danger { background: #ff3355; color: #fff; }
-    button.danger:hover { background: #cc2244; }
-    .addr { background: #161616; padding: 10px; border-radius: 6px;
-            word-break: break-all; font-family: monospace; font-size: 0.75em;
-            color: #00ffcc; margin-bottom: 8px; }
-    .log { background: #0a0a0a; padding: 10px; border-radius: 6px; height: 180px;
-           overflow-y: auto; font-family: monospace; font-size: 0.75em;
-           color: #00ffcc; }
-    .row { display: flex; gap: 10px; margin-top: 8px; }
-    .row button { margin-top: 0; }
+  :root { --bg:#0e1117; --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-monospace, "SF Mono", Consolas, monospace;
+         background:var(--bg); color:var(--fg); }
+  header { padding:16px 24px; border-bottom:1px solid #21262d; display:flex;
+           align-items:center; gap:16px; }
+  h1 { font-size:16px; margin:0; }
+  .stat { color:var(--muted); font-size:12px; }
+  main { padding:24px; display:grid; gap:24px; }
+  section { border:1px solid #21262d; border-radius:8px; overflow:hidden; }
+  section h2 { margin:0; font-size:13px; padding:10px 16px; background:#161b22;
+               border-bottom:1px solid #21262d; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { padding:8px 16px; text-align:left; border-bottom:1px solid #21262d; }
+  th { color:var(--muted); font-weight:500; }
+  tr:last-child td { border-bottom:none; }
+  .mono { font-family: ui-monospace; }
+  .accent { color:var(--accent); }
+  input { background:#161b22; border:1px solid #30363d; color:var(--fg);
+          padding:8px 12px; border-radius:6px; font-family:inherit; width:100%; }
+  button { background:#21262d; border:1px solid #30363d; color:var(--fg);
+           padding:8px 16px; border-radius:6px; cursor:pointer; }
 </style>
 </head>
 <body>
-    <h1>⛓️ Moeda Bruno v2</h1>
-    <div class="subtitle">PoW + Halving + UTXO + Merkle Root</div>
-
-    <div class="grid">
-        <!-- Carteira -->
-        <div class="card">
-            <h2>💼 Carteira</h2>
-            <div class="addr" id="addr">Carregando...</div>
-            <button onclick="copyAddr()">📋 Copiar Endereço</button>
-            <div class="stats" style="margin-top:12px;">
-                <div class="stat"><div class="v" id="balance">0</div><div class="l">Saldo BRN</div></div>
-                <div class="stat"><div class="v" id="height">0</div><div class="l">Altura</div></div>
-            </div>
-        </div>
-
-        <!-- Status da Rede -->
-        <div class="card">
-            <h2>🌐 Status da Rede</h2>
-            <div class="stats">
-                <div class="stat"><div class="v" id="difficulty">0</div><div class="l">Dificuldade</div></div>
-                <div class="stat"><div class="v" id="reward">0</div><div class="l">Recompensa</div></div>
-                <div class="stat"><div class="v" id="mined">0</div><div class="l">Total Minerado</div></div>
-                <div class="stat"><div class="v" id="mempool">0</div><div class="l">Mempool</div></div>
-            </div>
-            <div class="row">
-                <button onclick="startMining()" id="btnMine">⛏️ Minerar</button>
-                <button class="danger" onclick="stopMining()">⏹️ Parar</button>
-            </div>
-        </div>
-
-        <!-- Enviar -->
-        <div class="card">
-            <h2>💸 Enviar BRN</h2>
-            <input id="toAddr" placeholder="Endereço de destino (brn1...)">
-            <input id="amount" placeholder="Quantidade (ex: 1.5)">
-            <input id="fee" placeholder="Taxa (padrão 0.0001)" value="0.0001">
-            <button onclick="sendTx()">Enviar Transação</button>
-        </div>
-
-        <!-- Log -->
-        <div class="card">
-            <h2>📜 Log</h2>
-            <div class="log" id="log"></div>
-        </div>
+<header>
+  <h1>BRN — BrunoCoin</h1>
+  <span class="stat" id="h">altura: —</span>
+  <span class="stat" id="tip">tip: —</span>
+  <span class="stat" id="mp">mempool: —</span>
+  <span class="stat" id="ut">utxos: —</span>
+</header>
+<main>
+  <section>
+    <h2>Consulta de saldo</h2>
+    <div style="padding:16px; display:flex; gap:8px;">
+      <input id="addr" placeholder="brn1..." />
+      <button onclick="lookup()">Consultar</button>
     </div>
-
+    <div id="bal" style="padding:0 16px 16px;"></div>
+  </section>
+  <section>
+    <h2>Últimos blocos</h2>
+    <table><thead><tr><th>Altura</th><th>Hash</th><th>Timestamp</th><th>Txs</th></tr></thead>
+    <tbody id="blocks"></tbody></table>
+  </section>
+  <section>
+    <h2>Mempool</h2>
+    <table><thead><tr><th>TXID</th><th>Inputs</th><th>Outputs</th></tr></thead>
+    <tbody id="mp-body"></tbody></table>
+  </section>
+</main>
 <script>
-    let api = null;
-    let walletAddress = "";
-
-    function log(msg) {
-        const el = document.getElementById("log");
-        const t = new Date().toLocaleTimeString();
-        el.innerHTML = `[${t}] ${msg}<br>` + el.innerHTML;
-    }
-
-    async function refresh() {
-        if (!api) return;
-        try {
-            const s = await api.get_status();
-            document.getElementById("height").innerText = s.height;
-            document.getElementById("difficulty").innerText = s.difficulty;
-            document.getElementById("reward").innerText = s.reward;
-            document.getElementById("mined").innerText = s.total_mined;
-            document.getElementById("mempool").innerText = s.mempool_size;
-            if (walletAddress) {
-                const bal = await api.get_balance(walletAddress);
-                document.getElementById("balance").innerText = bal;
-            }
-        } catch (e) {
-            log("Erro ao atualizar: " + e);
-        }
-    }
-
-    async function startMining() {
-        if (!walletAddress) { log("Endereço da carteira não carregado."); return; }
-        const r = await api.start_mining(walletAddress);
-        log("Mineração: " + (r[1] || r));
-    }
-
-    async function stopMining() {
-        const r = await api.stop_mining();
-        log("Parar: " + (r[1] || r));
-    }
-
-    async function sendTx() {
-        const to = document.getElementById("toAddr").value.trim();
-        const amt = document.getElementById("amount").value.trim();
-        const fee = document.getElementById("fee").value.trim() || "0.0001";
-        if (!to || !amt) { log("Preencha endereço e quantidade."); return; }
-        log(`Enviando ${amt} BRN para ${to}...`);
-        try {
-            const result = await api.send_from_gui(to, amt, fee);
-            log(result);
-        } catch (e) {
-            log("Erro no envio: " + e);
-        }
-    }
-
-    function copyAddr() {
-        if (!walletAddress) return;
-        navigator.clipboard.writeText(walletAddress);
-        log("Endereço copiado.");
-    }
-
-    window.addEventListener("pywebviewready", async () => {
-        api = window.pywebview.api;
-        try {
-            const info = await api.get_wallet_info();
-            walletAddress = info.address;
-            document.getElementById("addr").innerText = walletAddress;
-            log("Carteira carregada: " + walletAddress);
-        } catch (e) {
-            log("Erro ao obter carteira: " + e);
-        }
-        refresh();
-        setInterval(refresh, 3000);
-    });
+const fmt = (h) => h ? h.slice(0,20)+"…" : "—";
+async function refresh() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    document.getElementById("h").textContent = "altura: " + s.height;
+    document.getElementById("tip").textContent = "tip: " + fmt(s.tip);
+    document.getElementById("mp").textContent = "mempool: " + s.mempool;
+    document.getElementById("ut").textContent = "utxos: " + s.utxos;
+    const blocks = await (await fetch("/api/latest")).json();
+    document.getElementById("blocks").innerHTML = blocks.slice().reverse().map(b =>
+      `<tr><td>${b.height}</td><td class="mono accent">${fmt(b.hash)}</td>
+       <td>${new Date(b.timestamp*1000).toLocaleString()}</td>
+       <td>${b.transactions.length}</td></tr>`).join("");
+    const mp = await (await fetch("/api/mempool")).json();
+    document.getElementById("mp-body").innerHTML = mp.slice(0,20).map(t =>
+      `<tr><td class="mono">${fmt(t.txid)}</td>
+       <td>${t.inputs.length}</td><td>${t.outputs.length}</td></tr>`).join("")
+       || '<tr><td colspan="3" style="color:var(--muted)">vazia</td></tr>';
+  } catch (e) { console.error(e); }
+}
+async function lookup() {
+  const a = document.getElementById("addr").value.trim();
+  if (!a) return;
+  const r = await (await fetch("/api/balance/"+encodeURIComponent(a))).json();
+  document.getElementById("bal").innerHTML =
+    `<div class="mono accent">${a}</div>
+     <div style="margin-top:8px">saldo: <b>${(r.balance/1e8).toFixed(8)} BRN</b>
+     (${r.utxos.length} UTXOs)</div>`;
+}
+setInterval(refresh, 5000); refresh();
 </script>
 </body>
 </html>
