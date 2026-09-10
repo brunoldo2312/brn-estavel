@@ -12,9 +12,24 @@ from cripto_wallet import WalletManager
 from cripto_db import BlockchainDB
 from cripto_p2p_network import AutoPortForwarder
 
+
+def _harden_console_encoding():
+    """Evita que emojis nos logs derrubem threads em consoles Windows (cp1252)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                stream.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
+_harden_console_encoding()
+
 COIN_NAME = "Bruno"
 COIN_SYMBOL = "BRN"
-BLOCK_REWARD = 50.0
+BLOCK_REWARD = 1.0
 GENESIS_ADDRESS = "brn1111cd943fa71e1f91dcd62f52fc6138bc845ab"
 GENESIS_AMOUNT = 100000.0
 DIFFICULTY_ADJUSTMENT_INTERVAL = 5  # Ajusta a cada 5 blocos
@@ -24,9 +39,29 @@ MAX_BLOCK_TRANSACTIONS = 1_000
 MAX_FUTURE_SECONDS = 120
 MONERO_FORK_NETWORK_ID = [0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44]
 
-BOOTSTRAP_PEERS = [
+BOOTSTRAP_PEERS_FILE = "bootstrap_peers.json"
+DEFAULT_BOOTSTRAP_PEERS = [
     ("192.168.0.17", 6001)
 ]
+
+
+def _load_bootstrap_peers():
+    """Carrega nós iniciais de bootstrap_peers.json (se existir).
+
+    Permite apontar para um nó com IP público em outra região sem editar o
+    código. Formato esperado: [{"ip": "1.2.3.4", "port": 6001}, ...].
+    """
+    try:
+        with open(BOOTSTRAP_PEERS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        peers = [(str(item["ip"]).strip(), int(item["port"])) for item in raw]
+        peers = [(ip, port) for ip, port in peers if ip]
+        return peers or list(DEFAULT_BOOTSTRAP_PEERS)
+    except (OSError, ValueError, KeyError, TypeError):
+        return list(DEFAULT_BOOTSTRAP_PEERS)
+
+
+BOOTSTRAP_PEERS = _load_bootstrap_peers()
 
 class BrunoBlock:
     def __init__(self, index, previous_hash, transactions, difficulty=4, nonce=0, timestamp=None, block_hash=None):
@@ -74,6 +109,7 @@ class CriptoAPI:
         self.mempool = []
         self.mempool_lock = threading.Lock()
         self.connected_peers = set()
+        self.peers_lock = threading.Lock()
         self.chain_lock = threading.RLock()
         
         # Controle de Mineração Contínua
@@ -87,6 +123,7 @@ class CriptoAPI:
         self.server_thread.start()
         
         threading.Thread(target=self._run_bootstrap_discovery, daemon=True).start()
+        threading.Thread(target=self._peer_maintenance_loop, daemon=True).start()
 
     def _init_database(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -143,6 +180,24 @@ class CriptoAPI:
             print(f"Erro ao receber dados: {e}")
         return data.decode('utf-8', errors='ignore')
 
+    def _request_peer(self, ip, port, message, timeout=5.0):
+        """Envia um pedido a um nó e devolve a resposta completa.
+
+        O shutdown(SHUT_WR) é essencial: sem ele o servidor remoto continua
+        aguardando EOF até o próprio timeout (5s) e só então responde, enquanto
+        quem pediu já desistiu (3s). Era isso que impedia GET_HEIGHT/GET_CHAIN
+        de concluir e fazia o nó "não enxergar" os demais.
+        """
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            s.connect((str(ip), int(port)))
+            s.sendall(message.encode('utf-8'))
+            s.shutdown(socket.SHUT_WR)
+            return self._receive_all(s)
+        finally:
+            s.close()
+
     def _start_p2p_server(self):
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -153,16 +208,20 @@ class CriptoAPI:
                 client_conn, client_addr = server_socket.accept()
                 client_conn.settimeout(5.0)
                 data = self._receive_all(client_conn)
-                
-                if client_addr[0] != "127.0.0.1":
-                    # A porta anunciada por quem conecta não é confiável; só a use
-                    # depois de uma sincronização iniciada localmente.
-                    pass
-                
+
                 if data == "GET_HEIGHT":
                     client_conn.sendall(str(len(self.db.get_raw_chain())).encode('utf-8'))
                 elif data == "GET_CHAIN":
                     client_conn.sendall(json.dumps(self.db.get_raw_chain()).encode('utf-8'))
+                elif data.startswith("ANNOUNCE_PEER:"):
+                    # A porta de escuta de quem conecta não vem no endereço de
+                    # origem (é efêmera), então ele a anuncia. Validamos
+                    # reconectando antes de registrar, tornando o peer mútuo.
+                    threading.Thread(
+                        target=self._handle_peer_announcement,
+                        args=(client_addr[0], data),
+                        daemon=True,
+                    ).start()
                 elif data.startswith("BROADCAST_TX:"):
                     tx_data = json.loads(data.split(":", 1)[1])
                     if self._validate_transaction(tx_data, include_mempool=True)[0]:
@@ -176,17 +235,124 @@ class CriptoAPI:
             except Exception:
                 pass
 
+    def _local_ip_addresses(self):
+        """Descobre os endereços IP desta máquina (loopback + LAN/WAN)."""
+        ips = set()
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None):
+                ips.add(info[4][0])
+        except Exception:
+            pass
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            probe.settimeout(1.0)
+            probe.connect(("8.8.8.8", 80))
+            ips.add(probe.getsockname()[0])
+            probe.close()
+        except Exception:
+            pass
+        ips.add("127.0.0.1")
+        return ips
+
+    def _is_self(self, ip, port):
+        """True apenas se (ip, porta) aponta para este próprio nó.
+
+        A checagem antiga comparava só a porta e impedia conectar a outro
+        computador que usasse a mesma porta (ex.: dois nós em 6001).
+        """
+        try:
+            if int(port) != int(self.p2p_port):
+                return False
+        except (ValueError, TypeError):
+            return False
+        ip = str(ip).strip()
+        if ip in ("127.0.0.1", "localhost", "0.0.0.0"):
+            return True
+        return ip in self._local_ip_addresses()
+
+    def get_local_ips(self):
+        """Endereços de escuta deste nó (o que informar ao outro computador)."""
+        port = self.get_p2p_port()
+        # O servidor escuta em 0.0.0.0 (somente IPv4), então não adianta
+        # anunciar IPv6/link-local: o outro nó não conseguiria conectar.
+        lan = sorted(
+            ip for ip in self._local_ip_addresses()
+            if "." in ip and not ip.startswith("127.") and not ip.startswith("169.254.")
+        )
+        return {
+            "port": port,
+            "loopback": f"127.0.0.1:{port}",
+            "lan_addresses": [f"{ip}:{port}" for ip in lan],
+        }
+
+    def get_connected_peers(self):
+        with self.peers_lock:
+            peers = sorted(self.connected_peers, key=lambda p: (p[0], int(p[1])))
+        return {
+            "count": len(peers),
+            "peers": [{"ip": ip, "port": int(port)} for ip, port in peers],
+        }
+
+    def _add_peer(self, ip, port):
+        with self.peers_lock:
+            self.connected_peers.add((str(ip).strip(), int(port)))
+
+    def _remove_peer(self, ip, port):
+        with self.peers_lock:
+            self.connected_peers.discard((str(ip).strip(), int(port)))
+
+    def _ping_peer(self, ip, port):
+        try:
+            self._request_peer(ip, port, "GET_HEIGHT", timeout=3.0)
+            return True
+        except Exception:
+            return False
+
+    def _handle_peer_announcement(self, peer_ip, data):
+        """Registra um nó que se anunciou, após confirmar que ele é alcançável."""
+        try:
+            announced_port = int(data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            return
+        if not announced_port or self._is_self(peer_ip, announced_port):
+            return
+        if self._ping_peer(peer_ip, announced_port):
+            self._add_peer(peer_ip, announced_port)
+
     def _run_bootstrap_discovery(self):
         time.sleep(2)
         for ip, port in BOOTSTRAP_PEERS:
-            if port != self.p2p_port:
-                try:
-                    self.connect_and_sync(ip, port)
-                except Exception:
-                    pass
+            if self._is_self(ip, port):
+                continue
+            try:
+                self.connect_and_sync(ip, port)
+            except Exception:
+                pass
+
+    def _peer_maintenance_loop(self):
+        """Remove peers que pararam de responder e reconecta aos nós conhecidos."""
+        while True:
+            time.sleep(15)
+            try:
+                with self.peers_lock:
+                    current = list(self.connected_peers)
+                for ip, port in current:
+                    if not self._ping_peer(ip, port):
+                        self._remove_peer(ip, port)
+                for ip, port in BOOTSTRAP_PEERS:
+                    if self._is_self(ip, port):
+                        continue
+                    with self.peers_lock:
+                        already = (str(ip).strip(), int(port)) in self.connected_peers
+                    if not already:
+                        self.connect_and_sync(ip, port)
+            except Exception:
+                pass
 
     def _broadcast_transaction_to_network(self, tx):
-        for ip, port in list(self.connected_peers):
+        with self.peers_lock:
+            targets = list(self.connected_peers)
+        for ip, port in targets:
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(2.0)
@@ -194,29 +360,37 @@ class CriptoAPI:
                 s.sendall(f"BROADCAST_TX:{json.dumps(tx)}".encode('utf-8'))
                 s.close()
             except Exception:
-                self.connected_peers.discard((ip, port))
+                self._remove_peer(ip, port)
 
     def connect_and_sync(self, ip, port):
         try:
-            s_height = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s_height.settimeout(3.0)
-            s_height.connect((ip, int(port)))
-            s_height.sendall("GET_HEIGHT".encode('utf-8'))
-            remote_height = int(s_height.recv(1024).decode('utf-8'))
-            s_height.close()
-            
-            if remote_height <= len(self.db.get_raw_chain()):
-                return {"status": "sucesso", "message": "Sua blockchain ja esta atualizada."}
+            port = int(port)
+            remote_height = int(self._request_peer(ip, port, "GET_HEIGHT", timeout=5.0))
 
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.settimeout(10.0)
-            client_socket.connect((ip, int(port)))
-            client_socket.sendall("GET_CHAIN".encode('utf-8'))
-            response = self._receive_all(client_socket)
-            client_socket.close()
-            self.connected_peers.add((ip, int(port)))
+            # Registra o peer como alcançável MESMO quando a cadeia remota não é
+            # maior. Antes ele só era registrado após baixar uma cadeia maior,
+            # então blocos minerados e transações nunca eram propagados para
+            # nós "empatados" — causa comum de não enxergar o outro computador.
+            self._add_peer(ip, port)
+
+            # Anuncia a própria porta para o remoto nos registrar de volta,
+            # tornando a conexão mútua mesmo quando só este lado a iniciou.
+            try:
+                s_ann = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s_ann.settimeout(3.0)
+                s_ann.connect((str(ip), port))
+                s_ann.sendall(f"ANNOUNCE_PEER:{self.p2p_port}".encode('utf-8'))
+                s_ann.close()
+            except Exception:
+                pass
+
+            if remote_height <= len(self.db.get_raw_chain()):
+                return {"status": "sucesso", "message": f"Conectado a {ip}:{port}. Sua blockchain já está atualizada."}
+
+            response = self._request_peer(ip, port, "GET_CHAIN", timeout=15.0)
             return {"status": "sucesso", "message": self._resolve_consensus(json.loads(response))}
         except Exception as e:
+            self._remove_peer(ip, port)
             return {"status": "erro", "message": str(e)}
 
     def _validate_address(self, address):
@@ -418,6 +592,74 @@ class CriptoAPI:
             return {"address": address, "balance": float(balance)}
         except ValueError as e:
             return {"status": "erro", "message": str(e)}
+
+    def get_transaction_history(self, address):
+        """Extrato de envios e recebimentos de um endereço (chain confirmada + mempool)."""
+        try:
+            self._validate_address(address)
+        except ValueError as e:
+            return {"status": "erro", "message": str(e)}
+
+        def _amount(tx):
+            try:
+                return float(Decimal(str(tx.get("amount", 0))))
+            except (InvalidOperation, ValueError):
+                return 0.0
+
+        entries = []
+        chain = self.db.get_raw_chain()
+        chain_len = len(chain)
+        for block in chain:
+            block_index = block["index"]
+            block_ts = float(block.get("timestamp", 0) or 0)
+            confirmations = max(0, chain_len - block_index)
+            for tx in block["transactions"]:
+                sender = tx.get("sender")
+                receiver = tx.get("receiver")
+                ts = float(tx.get("timestamp") or block_ts)
+                if receiver == address:
+                    if sender == "SISTEMA":
+                        tx_type = "genese" if block_index == 0 else "mineracao"
+                        counterparty = "SISTEMA (Rede)"
+                    else:
+                        tx_type = "recebido"
+                        counterparty = sender
+                    entries.append({
+                        "direction": "entrada", "type": tx_type, "amount": _amount(tx),
+                        "counterparty": counterparty, "timestamp": ts, "block_index": block_index,
+                        "confirmations": confirmations, "status": "confirmada", "txid": tx.get("txid", ""),
+                    })
+                elif sender == address:
+                    entries.append({
+                        "direction": "saida", "type": "enviado", "amount": _amount(tx),
+                        "counterparty": receiver, "timestamp": ts, "block_index": block_index,
+                        "confirmations": confirmations, "status": "confirmada", "txid": tx.get("txid", ""),
+                    })
+
+        with self.mempool_lock:
+            pending = list(self.mempool)
+        for tx in pending:
+            sender = tx.get("sender")
+            receiver = tx.get("receiver")
+            ts = float(tx.get("timestamp") or 0)
+            if receiver == address:
+                entries.append({
+                    "direction": "entrada", "type": "recebido", "amount": _amount(tx),
+                    "counterparty": sender, "timestamp": ts, "block_index": None,
+                    "confirmations": 0, "status": "pendente", "txid": tx.get("txid", ""),
+                })
+            elif sender == address:
+                entries.append({
+                    "direction": "saida", "type": "enviado", "amount": _amount(tx),
+                    "counterparty": receiver, "timestamp": ts, "block_index": None,
+                    "confirmations": 0, "status": "pendente", "txid": tx.get("txid", ""),
+                })
+
+        entries.sort(
+            key=lambda e: (e["timestamp"], e["block_index"] if e["block_index"] is not None else float("inf")),
+            reverse=True,
+        )
+        return {"status": "sucesso", "address": address, "history": entries}
 
     def send_funds(self, sender, receiver, amount, spend_secret_key, public_key):
         try:

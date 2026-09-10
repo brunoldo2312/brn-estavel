@@ -19,6 +19,18 @@
         .key-box { background: #181825; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 11px; word-break: break-all; margin-top: 5px; color: #fab387; }
         .log-box { background: #11111b; padding: 12px; border-radius: 6px; font-family: monospace; max-height: 180px; overflow-y: auto; font-size: 12px; color: #a6e3a1; line-height: 1.5; }
         .balance-txt { font-weight: bold; color: #a6e3a1; font-size: 16px; margin-top: 5px; }
+        .card.statement { border-left-color: #94e2d5; }
+        .tx-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #585b70; font-size: 13px; }
+        .tx-row:last-child { border-bottom: none; }
+        .tx-in { color: #a6e3a1; }
+        .tx-out { color: #f38ba8; }
+        .tx-meta { color: #bac2de; font-size: 11px; font-family: monospace; margin-top: 2px; }
+        .tx-summary { font-size: 12px; margin-bottom: 8px; color: #cdd6f4; }
+        .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; background: #585b70; color: #cdd6f4; white-space: nowrap; }
+        .badge.pending { background: #f9e2af; color: #11111b; }
+        .peer-chip { display: inline-block; background: #181825; border: 1px solid #585b70; border-radius: 12px; padding: 2px 8px; margin: 2px; font-family: monospace; font-size: 11px; color: #89b4fa; }
+        .empty { color: #7f849c; font-style: italic; padding: 6px 2px; font-size: 12px; }
+        .statement-scroll { max-height: 320px; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -28,6 +40,9 @@
         <div class="card network-io">
             <h3>🌐 Rede Descentralizada (P2P Sync)</h3>
             <p>Seu endereço local de escuta: <span id="p2p-local-info" style="color: #fab387; font-family: monospace;">Carregando...</span></p>
+            <div id="p2p-lan-info" style="margin-bottom:8px;"></div>
+            <p style="margin:6px 0;">Pares conectados: <b id="peer-count" style="color:#a6e3a1;">0</b></p>
+            <div id="peer-list" style="margin-bottom:10px;"></div>
             <label>Conectar ao IP do Nó Remoto:</label>
             <input type="text" id="peer-ip" value="127.0.0.1" placeholder="Ex: 192.168.0.17">
             <label>Porta do Nó Remoto:</label>
@@ -73,6 +88,14 @@
             <button id="btn-mineracao" style="background:#a6e3a1; color:#11111b;" onclick="alternarMineracao()">Iniciar Mineração Contínua</button>
         </div>
 
+        <div class="card statement">
+            <h3>📜 Extrato da Carteira (Envios e Recebimentos)</h3>
+            <div id="extrato-resumo" class="tx-summary">—</div>
+            <div id="extrato-lista" class="statement-scroll">
+                <span class="empty">Crie ou importe uma carteira para ver o extrato.</span>
+            </div>
+        </div>
+
         <h3>🗒️ Estado Atual da Blockchain</h3>
         <div id="logs" class="log-box">Carregando livro-razão...</div>
     </div>
@@ -109,12 +132,82 @@
                         }
                     });
                 }
+
+                atualizarPeers();
+                atualizarExtrato();
             });
         }
 
         function carregarInfoP2P() {
-            window.pywebview.api.get_p2p_port().then(function(port) {
-                document.getElementById('p2p-local-info').innerText = `127.0.0.1:${port}`;
+            window.pywebview.api.get_local_ips().then(function(info) {
+                document.getElementById('p2p-local-info').innerText = info.loopback;
+                const lanBox = document.getElementById('p2p-lan-info');
+                if (info.lan_addresses && info.lan_addresses.length) {
+                    lanBox.innerHTML = '<b style="font-size:12px;">Endereços na rede (informe ao outro computador):</b><br>' +
+                        info.lan_addresses.map(function(a) { return `<span class="peer-chip">${a}</span>`; }).join('');
+                } else {
+                    lanBox.innerHTML = '<span class="empty">Nenhum endereço de LAN detectado.</span>';
+                }
+            });
+        }
+
+        function atualizarPeers() {
+            window.pywebview.api.get_connected_peers().then(function(res) {
+                document.getElementById('peer-count').innerText = res.count;
+                const list = document.getElementById('peer-list');
+                if (res.peers && res.peers.length) {
+                    list.innerHTML = res.peers.map(function(p) {
+                        return `<span class="peer-chip">🟢 ${p.ip}:${p.port}</span>`;
+                    }).join('');
+                } else {
+                    list.innerHTML = '<span class="empty">Nenhum par conectado. Clique em "Conectar e Sincronizar" (nos dois computadores) ou configure bootstrap_peers.json.</span>';
+                }
+            });
+        }
+
+        function atualizarExtrato() {
+            const addr = (document.getElementById('addr').innerText || '').trim();
+            const box = document.getElementById('extrato-lista');
+            const resumo = document.getElementById('extrato-resumo');
+            if (!addr) {
+                resumo.innerText = '—';
+                box.innerHTML = '<span class="empty">Crie ou importe uma carteira para ver o extrato.</span>';
+                return;
+            }
+            window.pywebview.api.get_transaction_history(addr).then(function(res) {
+                if (res.status !== 'sucesso') {
+                    resumo.innerText = '—';
+                    box.innerHTML = `<span class="empty">${res.message || 'Erro ao carregar o extrato.'}</span>`;
+                    return;
+                }
+                const h = res.history || [];
+                const totalIn = h.filter(function(e) { return e.direction === 'entrada'; }).reduce(function(s, e) { return s + e.amount; }, 0);
+                const totalOut = h.filter(function(e) { return e.direction === 'saida'; }).reduce(function(s, e) { return s + e.amount; }, 0);
+                resumo.innerHTML = `<span class="tx-in">▲ Entradas: ${totalIn.toFixed(2)} BRN</span> &nbsp;|&nbsp; <span class="tx-out">▼ Saídas: ${totalOut.toFixed(2)} BRN</span> &nbsp;|&nbsp; ${h.length} lançamento(s)`;
+                if (!h.length) {
+                    box.innerHTML = '<span class="empty">Nenhuma transação encontrada para este endereço.</span>';
+                    return;
+                }
+                const labels = { genese: 'Gênese', mineracao: 'Mineração', recebido: 'Recebido', enviado: 'Enviado' };
+                box.innerHTML = h.map(function(e) {
+                    const isIn = e.direction === 'entrada';
+                    const cls = isIn ? 'tx-in' : 'tx-out';
+                    const arrow = isIn ? '⬇️' : '⬆️';
+                    const sign = isIn ? '+' : '−';
+                    const when = e.timestamp ? new Date(e.timestamp * 1000).toLocaleString() : '—';
+                    const badge = e.status === 'pendente'
+                        ? '<span class="badge pending">pendente</span>'
+                        : `<span class="badge">bloco #${e.block_index} · ${e.confirmations} conf.</span>`;
+                    const cp = (e.counterparty || '—');
+                    const cpShort = cp.length > 20 ? cp.substring(0, 20) + '…' : cp;
+                    return `<div class="tx-row">
+                        <div>
+                            <div class="${cls}">${arrow} ${labels[e.type] || e.type} &nbsp;<b>${sign}${e.amount.toFixed(2)} BRN</b></div>
+                            <div class="tx-meta">${isIn ? 'de' : 'para'} ${cpShort} · ${when}</div>
+                        </div>
+                        <div>${badge}</div>
+                    </div>`;
+                }).join('');
             });
         }
 
