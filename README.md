@@ -12,6 +12,7 @@ A **Moeda Bruno (BRN)** é uma implementação experimental de um ecossistema de
 *   **Livro-Razão Relacional (SQLite3):** Persistência imutável indexada com auditoria histórica e reconstituição dinâmica de saldos em tempo real.
 *   **Backup Criptografado de Chaves (.wallet):** Cifragem simétrica em fluxo utilizando derivação de chaves PBKDF de 5000 rounds para proteção de Spend Keys locais.
 *   **Interface Gráfica Nativa (Desktop Puro):** Janela escura desacoplada construída sobre a ponte de injeção JavaScript-Python (`pywebview` + `PyQt6`).
+*   **Endereço de Recebimento:** Botão para copiar o endereço público da carteira com um clique, facilitando o recebimento de BRN sem expor a chave privada.
 
 ---
 
@@ -26,6 +27,12 @@ O ecossistema foi dividido em módulos isolados para garantir a consistência de
 ├── cripto_p2p_network.py     # Descoberta de Gateway e Auto Port Forwarding (UPnP)
 └── index.html                # Interface visual baseada na ponte Javascript-Python Native
 ```
+
+### Receber BRN
+
+1. Crie ou importe uma carteira.
+2. Abaixo de **Seu Endereço Público**, clique em **Copiar endereço de recebimento**.
+3. Envie somente esse endereço `brn1...` para quem fará o depósito. Nunca compartilhe a chave privada.
 
 ## Segurança e limites do protótipo
 
