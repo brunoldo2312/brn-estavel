@@ -2,10 +2,11 @@
 explorer.py
 Explorador de blocos da Moeda Bruno v2 (Flask, porta 8080).
 """
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string
 import time
 import sqlite3
 import sys
+import json
 
 DB_PATH = sys.argv[1] if len(sys.argv) > 1 else "brn_v2_chain_6001.db"
 PORT = 8080
@@ -176,8 +177,7 @@ def block_detail(h):
         return "Bloco não encontrado", 404
     block = blocks[0]
     txs = query("SELECT raw FROM transactions WHERE block_height=? ORDER BY rowid", (h,))
-    import json as _json
-    tx_list = [_json.loads(t["raw"]) for t in txs]
+    tx_list = [json.loads(t["raw"]) for t in txs]
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(block["timestamp"]))
     return render_template_string(BLOCK_HTML, block=block, txs=tx_list, ts=ts)
 
