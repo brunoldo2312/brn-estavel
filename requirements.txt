@@ -1,0 +1,4 @@
+coincurve>=19.0.0
+orjson>=3.9
+flask>=3.0
+cryptography>=42.0
