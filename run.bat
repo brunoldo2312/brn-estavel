@@ -1,112 +1,178 @@
 @echo off
-setlocal EnableDelayedExpansion
-cd /d "%~dp0"
+setlocal
 
-REM ============================================================
-REM  BRN-Estavel - Launcher unificado (Windows)
-REM  Cria venv, instala dependencias, configura Ngrok e roda
-REM ============================================================
+REM ========================================================
+REM  Script de instalacao e execucao do projeto BRN-L2
+REM  Usa Miniconda + conda-forge para evitar compilacao C++
+REM ========================================================
 
-REM ----- CONFIGURACOES (edite se necessario) -----
-set "PORT=6001"
-set "EXPLORER_PORT=8080"
-set "MINER=brn1qxyzk7y0v2j4g0a8d9n5t3m2k7h4s6w8c9p2e"
-set "MINE=--mine"
-set "EXPLORER=--explorer"
-set "OPEN_BROWSER=--open-browser"
+echo [INFO] Verificando a presenca do Conda...
 
-REM ----- TOKEN NGROK -----
-set "NGROK_AUTHTOKEN=ep_3J92eYaKL7KqlZfSSoIyuDNrewF"
-REM -----------------------------------------------
+where conda >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [INFO] Conda encontrado no PATH.
+    goto :conda_found
+)
 
-REM ---- 1) Verifica Python ----
-where python >nul 2>&1
-if errorlevel 1 (
-    echo [ERRO] Python nao encontrado no PATH.
-    echo        Instale o Python 3.10+ em https://www.python.org/downloads/
-    echo        Marque "Add Python to PATH" durante a instalacao.
+if exist "%UserProfile%\miniconda3\Scripts\conda.exe" (
+    echo [INFO] Miniconda encontrado em %UserProfile%\miniconda3
+    set "CONDA_PATH=%UserProfile%\miniconda3"
+    goto :conda_found
+)
+
+if exist "%UserProfile%\Miniconda3\Scripts\conda.exe" (
+    echo [INFO] Miniconda encontrado em %UserProfile%\Miniconda3
+    set "CONDA_PATH=%UserProfile%\Miniconda3"
+    goto :conda_found
+)
+
+if exist "C:\ProgramData\miniconda3\Scripts\conda.exe" (
+    echo [INFO] Miniconda encontrado em C:\ProgramData\miniconda3
+    set "CONDA_PATH=C:\ProgramData\miniconda3"
+    goto :conda_found
+)
+
+echo [AVISO] Miniconda nao foi encontrado.
+echo [INFO] Iniciando a instalacao automatica do Miniconda...
+
+set "MINICONDA_INSTALLER=%TEMP%\Miniconda3-latest-Windows-x86_64.exe"
+set "MINICONDA_URL=https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
+
+echo [INFO] Baixando o Miniconda...
+powershell -Command "& {Invoke-WebRequest -Uri '%MINICONDA_URL%' -OutFile '%MINICONDA_INSTALLER%'}"
+if not exist "%MINICONDA_INSTALLER%" (
+    echo [ERRO] Falha ao baixar o instalador do Miniconda.
     pause
     exit /b 1
 )
 
-REM ---- 2) Cria o venv se nao existir ----
-if not exist "env\Scripts\python.exe" (
-    echo [SETUP] Criando ambiente virtual...
-    python -m venv env
-    if errorlevel 1 (
-        echo [ERRO] Falha ao criar o venv.
-        pause
-        exit /b 1
-    )
-    set "NEED_INSTALL=1"
-) else (
-    set "NEED_INSTALL=0"
-)
-
-REM ---- 3) Instala dependencias se necessario ----
-if "!NEED_INSTALL!"=="1" (
-    echo [SETUP] Instalando dependencias...
-    call "env\Scripts\python.exe" -m pip install --upgrade pip
-    if exist "requirements.txt" (
-        call "env\Scripts\python.exe" -m pip install -r requirements.txt
-    ) else (
-        call "env\Scripts\python.exe" -m pip install ^
-            coincurve^>=19.0.0 ^
-            orjson^>=3.9 ^
-            flask^>=3.0 ^
-            cryptography^>=42.0
-    )
-    if errorlevel 1 (
-        echo [ERRO] Falha ao instalar dependencias.
-        pause
-        exit /b 1
-    )
-    echo [SETUP] Dependencias instaladas.
-)
-
-REM ---- 4) Verifica e configura Ngrok ----
-where ngrok >nul 2>&1
-if errorlevel 1 (
-    echo [AVISO] Ngrok nao encontrado no PATH.
-    echo         O explorador rodara apenas localmente em http://localhost:%EXPLORER_PORT%
-    echo         Para expor publicamente, instale o Ngrok: https://ngrok.com/download
-    set "NGROK_OK=0"
-) else (
-    echo [NGROK] Configurando authtoken...
-    ngrok config add-authtoken %NGROK_AUTHTOKEN% >nul 2>&1
-    if errorlevel 1 (
-        echo [AVISO] Falha ao configurar o token. Túnel publico desabilitado.
-        set "NGROK_OK=0"
-    ) else (
-        echo [NGROK] Token configurado.
-        set "NGROK_OK=1"
-    )
-)
-
-REM ---- 5) Sobe o tunnel Ngrok (se disponivel) ----
-set "NGROK_PID="
-if "!NGROK_OK!"=="1" (
-    echo [NGROK] Abrindo tunel publico para a porta %EXPLORER_PORT%...
-    start "BRN-Ngrok" /min cmd /c "ngrok http %EXPLORER_PORT% --log=stdout > ngrok.log 2>&1"
-    timeout /t 3 /nobreak >nul
-    echo [NGROK] URL publica disponivel em http://127.0.0.1:4040
-)
-
-REM ---- 6) Roda o programa ----
-echo [RUN] Iniciando BRN-Estavel na porta %PORT% ...
-call "env\Scripts\python.exe" main.py ^
-    --port %PORT% ^
-    --miner "%MINER%" ^
-    %MINE% %EXPLORER% %OPEN_BROWSER%
-
-if errorlevel 1 (
-    echo.
-    echo [ERRO] O programa encerrou com erro.
+echo [INFO] Instalando o Miniconda silenciosamente...
+start /wait "" "%MINICONDA_INSTALLER%" /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /S /D=%UserProfile%\miniconda3
+if %errorlevel% neq 0 (
+    echo [ERRO] A instalacao do Miniconda falhou.
     pause
     exit /b 1
 )
 
-REM ---- 7) Limpa processos Ngrok ao sair ----
-taskkill /FI "WINDOWTITLE eq BRN-Ngrok" /F >nul 2>&1
+set "CONDA_PATH=%UserProfile%\miniconda3"
+echo [INFO] Miniconda instalado com sucesso.
 
+:conda_found
+if not defined CONDA_PATH (
+    for /f "tokens=*" %%i in ('where conda 2^>nul') do (
+        set "CONDA_PATH=%%~dpi.."
+        goto :conda_path_set
+    )
+)
+:conda_path_set
+
+echo [INFO] Usando o Miniconda para configurar o ambiente.
+
+call "%CONDA_PATH%\Scripts\activate.bat" "%CONDA_PATH%"
+
+REM ========================================================
+REM  PASSO 1: Aceitar automaticamente os ToS da Anaconda
+REM ========================================================
+echo [INFO] Configurando aceitacao automatica dos Termos de Servico...
+set CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
+
+REM ========================================================
+REM  PASSO 2: Remover "defaults" do .condarc DA INSTALACAO RAIZ
+REM ========================================================
+echo [INFO] Removendo canal "defaults" do .condarc da instalacao raiz...
+
+if exist "%CONDA_PATH%\.condarc" (
+    echo [INFO] Arquivo .condarc da raiz encontrado. Removendo defaults...
+    call conda config --file "%CONDA_PATH%\.condarc" --remove channels defaults >nul 2>&1
+    call conda config --file "%CONDA_PATH%\.condarc" --remove channels https://repo.anaconda.com/pkgs/main >nul 2>&1
+    call conda config --file "%CONDA_PATH%\.condarc" --remove channels https://repo.anaconda.com/pkgs/r >nul 2>&1
+    call conda config --file "%CONDA_PATH%\.condarc" --remove channels https://repo.anaconda.com/pkgs/msys2 >nul 2>&1
+)
+
+REM ========================================================
+REM  PASSO 3: Configurar conda-forge como unico canal
+REM ========================================================
+echo [INFO] Configurando o Conda para usar apenas o canal conda-forge...
+
+call conda config --remove-key channels >nul 2>&1
+call conda config --add channels conda-forge
+call conda config --set channel_priority strict
+
+echo [INFO] Canais configurados (usuario):
+call conda config --show channels
+echo.
+
+REM ========================================================
+REM  PASSO 4: Criar ambiente com Python 3.13
+REM ========================================================
+echo [INFO] Removendo ambiente antigo (se existir)...
+call conda env remove -n brn-l2 -y >nul 2>&1
+
+echo [INFO] Criando novo ambiente com Python 3.13...
+call conda create -n brn-l2 python=3.13 --override-channels -c conda-forge -y
+if %errorlevel% neq 0 (
+    echo [ERRO] Falha ao criar o ambiente conda.
+    pause
+    exit /b 1
+)
+
+echo [INFO] Ambiente brn-l2 criado com sucesso.
+
+REM ========================================================
+REM  PASSO 5: Instalar TODAS as dependencias via CONDA
+REM  (evita compilacao C++ e o erro do Visual C++ Build Tools)
+REM ========================================================
+echo [INFO] Instalando todas as dependencias via conda-forge...
+echo [INFO] (Isso pode levar alguns minutos na primeira vez)
+
+call conda install -n brn-l2 --override-channels -c conda-forge -y ^
+    coincurve ^
+    ckzg ^
+    lru-dict ^
+    orjson ^
+    web3 ^
+    eth-account ^
+    eth-keys ^
+    eth-utils ^
+    requests ^
+    colorama ^
+    python-dotenv ^
+    loguru
+
+if %errorlevel% neq 0 (
+    echo [ERRO] Falha ao instalar dependencias via conda.
+    echo [INFO] Tentando instalar pacotes individualmente para identificar o problema...
+    call conda install -n brn-l2 --override-channels -c conda-forge -y coincurve
+    call conda install -n brn-l2 --override-channels -c conda-forge -y ckzg
+    call conda install -n brn-l2 --override-channels -c conda-forge -y lru-dict
+    call conda install -n brn-l2 --override-channels -c conda-forge -y orjson
+    call conda install -n brn-l2 --override-channels -c conda-forge -y web3 eth-account eth-keys eth-utils
+    call conda install -n brn-l2 --override-channels -c conda-forge -y requests colorama python-dotenv loguru
+)
+
+echo [INFO] Dependencias instaladas com sucesso via conda.
+
+REM ========================================================
+REM  PASSO 6: Ativar ambiente e verificar
+REM ========================================================
+echo [INFO] Ativando ambiente brn-l2...
+call conda activate brn-l2
+
+echo [INFO] Confirmando a versao do Python dentro do ambiente...
+python --version
+
+echo [INFO] Verificando pacotes instalados...
+python -c "import orjson; print('orjson OK')" 2>nul || echo [AVISO] orjson nao encontrado
+python -c "import web3; print('web3 OK')" 2>nul || echo [AVISO] web3 nao encontrado
+python -c "import coincurve; print('coincurve OK')" 2>nul || echo [AVISO] coincurve nao encontrado
+
+REM ========================================================
+REM  PASSO 7: Executar o projeto
+REM ========================================================
+echo [INFO] Executando o projeto...
+python node.py
+
+echo.
+echo [INFO] Processo finalizado. Pressione qualquer tecla para sair.
+pause >nul
 endlocal

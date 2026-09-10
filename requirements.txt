@@ -1,4 +1,21 @@
-coincurve>=19.0.0
-orjson>=3.9
-flask>=3.0
-cryptography>=42.0
+# ============================================
+#  Dependencias do projeto brn-estavel
+#  coincurve e instalado separadamente no run.bat
+# ============================================
+
+# === Core Web3 / Ethereum ===
+web3==6.20.3
+eth-account==0.11.3
+eth-keys==0.5.1
+eth-utils==4.1.1
+
+# === HTTP / Requests ===
+requests==2.32.3
+
+# === JSON de alta performance ===
+orjson>=3.10,<4
+
+# === Utilitarios CLI / Log ===
+colorama==0.4.6
+python-dotenv==1.0.1
+loguru==0.7.2
