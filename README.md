@@ -27,6 +27,18 @@ O ecossistema foi dividido em módulos isolados para garantir a consistência de
 └── index.html                # Interface visual baseada na ponte Javascript-Python Native
 ```
 
+## Segurança e limites do protótipo
+
+Esta é uma blockchain educacional, não indicada para valores reais. A versão atual valida a assinatura contra o endereço do remetente, impede gasto duplo na mempool, rejeita blocos/cadeias com gastos sem saldo e limita mensagens P2P recebidas.
+
+Backups novos usam `cryptography` (Fernet com PBKDF2-SHA256 e 600.000 iterações), exigem senha de ao menos 12 caracteres e são gravados na pasta `wallets/`. Backups antigos Fernet ainda podem ser importados e devem ser reexportados. Instale as dependências antes de iniciar:
+
+```bash
+pip install ecdsa cryptography pywebview pyqt6
+```
+
+O UPnP deixou de ser ativado automaticamente. Só exponha a porta da carteira à internet se você entender e aceitar esse risco; para testes na mesma rede, use a sincronização manual da interface.
+
 ---
 
 ## 🛠️ Como Executar o Projeto (Máquina Local)

@@ -6,6 +6,7 @@ import secrets
 import socket
 import threading
 import sys
+from decimal import Decimal, InvalidOperation
 import webview
 from cripto_wallet import WalletManager
 from cripto_db import BlockchainDB
@@ -14,8 +15,13 @@ from cripto_p2p_network import AutoPortForwarder
 COIN_NAME = "Bruno"
 COIN_SYMBOL = "BRN"
 BLOCK_REWARD = 50.0
+GENESIS_ADDRESS = "brn1111cd943fa71e1f91dcd62f52fc6138bc845ab"
+GENESIS_AMOUNT = 100000.0
 DIFFICULTY_ADJUSTMENT_INTERVAL = 5  # Ajusta a cada 5 blocos
 TARGET_BLOCK_TIME = 10.0  # Tempo ideal por bloco em segundos
+MAX_DIFFICULTY = 8
+MAX_BLOCK_TRANSACTIONS = 1_000
+MAX_FUTURE_SECONDS = 120
 MONERO_FORK_NETWORK_ID = [0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44]
 
 BOOTSTRAP_PEERS = [
@@ -25,7 +31,7 @@ BOOTSTRAP_PEERS = [
 class BrunoBlock:
     def __init__(self, index, previous_hash, transactions, difficulty=4, nonce=0, timestamp=None, block_hash=None):
         self.index = int(index)
-        self.timestamp = float(timestamp) if timestamp else time.time()
+        self.timestamp = float(timestamp) if timestamp is not None else time.time()
         self.previous_hash = str(previous_hash)
         self.transactions = transactions if isinstance(transactions, list) else json.loads(transactions)
         self.difficulty = int(difficulty)
@@ -68,6 +74,7 @@ class CriptoAPI:
         self.mempool = []
         self.mempool_lock = threading.Lock()
         self.connected_peers = set()
+        self.chain_lock = threading.RLock()
         
         # Controle de Mineração Contínua
         self.is_mining = False
@@ -92,7 +99,7 @@ class CriptoAPI:
             ''')
             cursor.execute('SELECT COUNT(*) FROM blocks')
             if cursor.fetchone()[0] == 0:
-                genesis = BrunoBlock(0, "0", [{"sender": "SISTEMA", "receiver": "brn1111cd943fa71e1f91dcd62f52fc6138bc845ab", "amount": 100000.0}], difficulty=4)
+                genesis = BrunoBlock(0, "0", [{"sender": "SISTEMA", "receiver": GENESIS_ADDRESS, "amount": GENESIS_AMOUNT}], difficulty=4)
                 genesis.mine_block()
                 self.db.insert_block(genesis)
 
@@ -120,7 +127,7 @@ class CriptoAPI:
             return max(1, current_diff - 1)
         return current_diff
 
-    def _receive_all(self, sock, buffer_size=4096, max_size=10*1024*1024):
+    def _receive_all(self, sock, buffer_size=4096, max_size=1_048_576):
         data = b""
         try:
             while True:
@@ -148,7 +155,9 @@ class CriptoAPI:
                 data = self._receive_all(client_conn)
                 
                 if client_addr[0] != "127.0.0.1":
-                    self.connected_peers.add((client_addr[0], self.p2p_port))
+                    # A porta anunciada por quem conecta não é confiável; só a use
+                    # depois de uma sincronização iniciada localmente.
+                    pass
                 
                 if data == "GET_HEIGHT":
                     client_conn.sendall(str(len(self.db.get_raw_chain())).encode('utf-8'))
@@ -156,7 +165,7 @@ class CriptoAPI:
                     client_conn.sendall(json.dumps(self.db.get_raw_chain()).encode('utf-8'))
                 elif data.startswith("BROADCAST_TX:"):
                     tx_data = json.loads(data.split(":", 1)[1])
-                    if self._verify_tx_structure(tx_data):
+                    if self._validate_transaction(tx_data, include_mempool=True)[0]:
                         with self.mempool_lock:
                             if tx_data not in self.mempool:
                                 self.mempool.append(tx_data)
@@ -219,19 +228,81 @@ class CriptoAPI:
             raise ValueError("Endereco contem caracteres hexadecimais invalidos")
         return True
 
+    @staticmethod
+    def _canonical_amount(value) -> float:
+        try:
+            amount = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            raise ValueError("Quantia inválida.")
+        if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -8:
+            raise ValueError("Quantia inválida; use até 8 casas decimais.")
+        return float(amount)
+
+    @staticmethod
+    def _transaction_id(tx):
+        signed = {key: tx[key] for key in ("sender", "receiver", "amount", "timestamp", "public_key", "signature")}
+        return hashlib.sha256(json.dumps(signed, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def _available_balance(self, address, ignore_tx_id=None):
+        balance = Decimal(str(self.get_balance(address).get("balance", 0)))
+        with self.mempool_lock:
+            for tx in self.mempool:
+                if tx.get("sender") == address and tx.get("txid") != ignore_tx_id:
+                    balance -= Decimal(str(tx["amount"]))
+        return balance
+
     def _verify_tx_structure(self, tx) -> bool:
         """Verifica se a transação possui formato e assinatura validos"""
-        if tx.get("sender") == "SISTEMA":
-            return True
+        if not isinstance(tx, dict):
+            return False
         
-        required_keys = ["sender", "receiver", "amount", "public_key", "signature"]
+        required_keys = ["sender", "receiver", "amount", "timestamp", "public_key", "signature"]
         if not all(k in tx for k in required_keys):
             return False
-            
-        payload = {"sender": tx["sender"], "receiver": tx["receiver"], "amount": tx["amount"], "timestamp": tx["timestamp"]}
-        return WalletManager.verify_signature(tx["public_key"], payload, tx["signature"])
+        try:
+            self._validate_address(tx["sender"])
+            self._validate_address(tx["receiver"])
+            amount = self._canonical_amount(tx["amount"])
+            timestamp = float(tx["timestamp"])
+            if not timestamp or timestamp > time.time() + MAX_FUTURE_SECONDS:
+                return False
+            # Impede assinar com uma chave e declarar o endereço de outra carteira.
+            if WalletManager.address_from_public_key(tx["public_key"]) != tx["sender"]:
+                return False
+            payload = {"sender": tx["sender"], "receiver": tx["receiver"], "amount": amount, "timestamp": timestamp}
+            return WalletManager.verify_signature(tx["public_key"], payload, tx["signature"])
+        except (ValueError, TypeError, KeyError):
+            return False
+
+    def _validate_transaction(self, tx, include_mempool=False):
+        if not self._verify_tx_structure(tx):
+            return False, "Transação inválida ou assinatura não confere."
+        try:
+            txid = self._transaction_id(tx)
+            known_txids = {
+                item.get("txid", self._transaction_id(item))
+                for block in self.db.get_raw_chain() for item in block["transactions"]
+                if item.get("sender") != "SISTEMA"
+            }
+            if txid in known_txids:
+                return False, "Transação já confirmada."
+            with self.mempool_lock:
+                if any(item.get("txid", self._transaction_id(item)) == txid for item in self.mempool):
+                    return False, "Transação já está na mempool."
+            if include_mempool and self._available_balance(tx["sender"], txid) < Decimal(str(tx["amount"])):
+                return False, "Saldo disponível insuficiente."
+            return True, "OK"
+        except (ValueError, KeyError, TypeError):
+            return False, "Transação inválida."
 
     def _validate_block(self, block_data):
+        required = {"index", "timestamp", "previous_hash", "transactions", "difficulty", "nonce", "hash"}
+        if not isinstance(block_data, dict) or not required.issubset(block_data) or not isinstance(block_data["transactions"], list):
+            return False, "Estrutura do bloco inválida"
+        if not 1 <= int(block_data["difficulty"]) <= MAX_DIFFICULTY or len(block_data["transactions"]) > MAX_BLOCK_TRANSACTIONS:
+            return False, "Limites do bloco inválidos"
+        if float(block_data["timestamp"]) > time.time() + MAX_FUTURE_SECONDS:
+            return False, "Timestamp futuro inválido"
         block = BrunoBlock(
             block_data["index"], block_data["previous_hash"], block_data["transactions"],
             block_data["difficulty"], block_data["nonce"], block_data["timestamp"], block_data["hash"]
@@ -243,17 +314,61 @@ class CriptoAPI:
         if not block_data["hash"].startswith(target):
             return False, "Prova de Trabalho invalida"
             
-        for tx in block_data["transactions"]:
-            if not self._verify_tx_structure(tx):
+        for position, tx in enumerate(block_data["transactions"]):
+            if tx.get("sender") == "SISTEMA":
+                expected_amount = GENESIS_AMOUNT if block.index == 0 else BLOCK_REWARD
+                is_genesis = block.index == 0 and tx.get("receiver") == GENESIS_ADDRESS
+                if position != 0 or tx.get("amount") != expected_amount or (not is_genesis and not self._is_valid_system_reward(tx)):
+                    return False, "Recompensa de mineração inválida"
+                if block.index == 0 and not is_genesis:
+                    return False, "Bloco gênese inválido"
+            elif not self._verify_tx_structure(tx):
                 return False, f"Transacao invalida detectada no bloco: {tx}"
                 
+        return True, "OK"
+
+    def _is_valid_system_reward(self, tx):
+        try:
+            self._validate_address(tx.get("receiver"))
+            return set(tx) == {"sender", "receiver", "amount"}
+        except ValueError:
+            return False
+
+    def _validate_chain_transactions(self, chain):
+        """Reexecuta o ledger para bloquear gastos sem saldo e duplicidades."""
+        balances = {}
+        seen_txids = set()
+        for block in chain:
+            for tx in block["transactions"]:
+                receiver = tx.get("receiver")
+                amount = Decimal(str(tx.get("amount", 0)))
+                if tx.get("sender") == "SISTEMA":
+                    balances[receiver] = balances.get(receiver, Decimal("0")) + amount
+                    continue
+                if not self._verify_tx_structure(tx):
+                    return False, "Transação inválida no ledger remoto."
+                txid = self._transaction_id(tx)
+                if txid in seen_txids:
+                    return False, "Transação duplicada no ledger remoto."
+                seen_txids.add(txid)
+                sender = tx["sender"]
+                if balances.get(sender, Decimal("0")) < amount:
+                    return False, "Gasto sem saldo no ledger remoto."
+                balances[sender] -= amount
+                balances[receiver] = balances.get(receiver, Decimal("0")) + amount
         return True, "OK"
 
     def _resolve_consensus(self, remote_chain) -> str:
         if len(remote_chain) <= len(self.db.get_raw_chain()):
             return "Cadeia local ja e dominante."
             
+        if not isinstance(remote_chain, list) or not remote_chain:
+            return "Cadeia remota inválida."
+        if remote_chain[0].get("index") != 0 or remote_chain[0].get("previous_hash") != "0":
+            return "Gênese remota inválida."
         for i in range(1, len(remote_chain)):
+            if remote_chain[i]["index"] != remote_chain[i - 1]["index"] + 1 or remote_chain[i]["timestamp"] < remote_chain[i - 1]["timestamp"]:
+                return "Ordem de blocos inválida na cadeia remota."
             if remote_chain[i]["previous_hash"] != remote_chain[i-1]["hash"]:
                 return "Hashes corrompidos na cadeia remota."
                 
@@ -261,8 +376,12 @@ class CriptoAPI:
             is_valid, message = self._validate_block(block_data)
             if not is_valid:
                 return f"Bloco #{block_data['index']} rejeitado: {message}"
+        is_valid, message = self._validate_chain_transactions(remote_chain)
+        if not is_valid:
+            return f"Cadeia remota rejeitada: {message}"
                 
-        self.db.replace_chain(remote_chain)
+        with self.chain_lock:
+            self.db.replace_chain(remote_chain)
         return f"Sincronizado com sucesso para {len(remote_chain)} blocos."
 
     def save_encrypted_wallet(self, filename, password, address, spend_secret_key, public_key=""):
@@ -289,14 +408,14 @@ class CriptoAPI:
     def get_balance(self, address):
         try:
             self._validate_address(address)
-            balance = 0.0
+            balance = Decimal("0")
             for b in self.db.get_raw_chain():
                 for tx in b["transactions"]:
                     if tx.get("sender") == address:
-                        balance -= float(tx.get("amount", 0))
+                        balance -= Decimal(str(tx.get("amount", 0)))
                     if tx.get("receiver") == address:
-                        balance += float(tx.get("amount", 0))
-            return {"address": address, "balance": balance}
+                        balance += Decimal(str(tx.get("amount", 0)))
+            return {"address": address, "balance": float(balance)}
         except ValueError as e:
             return {"status": "erro", "message": str(e)}
 
@@ -304,11 +423,8 @@ class CriptoAPI:
         try:
             self._validate_address(sender)
             self._validate_address(receiver)
-            amount = float(amount)
-            if amount <= 0:
-                return {"status": "erro", "message": "Quantia invalida."}
-            if self.get_balance(sender).get("balance", 0) < amount:
-                return {"status": "erro", "message": "Saldo insuficiente!"}
+            sender, receiver = str(sender).strip(), str(receiver).strip()
+            amount = self._canonical_amount(amount)
                 
             tx_payload = {
                 "sender": str(sender).strip(),
@@ -323,6 +439,10 @@ class CriptoAPI:
                 "public_key": public_key,
                 "signature": signature
             }
+            full_tx["txid"] = self._transaction_id(full_tx)
+            valid, message = self._validate_transaction(full_tx, include_mempool=True)
+            if not valid:
+                return {"status": "erro", "message": message}
             
             with self.mempool_lock:
                 self.mempool.append(full_tx)
@@ -358,9 +478,10 @@ class CriptoAPI:
                 next_difficulty = self._calculate_next_difficulty()
                 
                 with self.mempool_lock:
+                    pending = list(self.mempool)
                     bloco_txs = [
                         {"sender": "SISTEMA", "receiver": str(miner_address).strip(), "amount": BLOCK_REWARD}
-                    ] + list(self.mempool)
+                    ] + pending
                     
                 new_block = BrunoBlock(
                     last_block["index"] + 1,
@@ -371,9 +492,14 @@ class CriptoAPI:
                 
                 success = new_block.mine_block(stop_event=self.mining_stop_event)
                 if success and self.is_mining:
-                    self.db.insert_block(new_block)
+                    with self.chain_lock:
+                        # Não anexar sobre uma ponta que foi alterada durante a PoW.
+                        current_tip = self.db.get_raw_chain()[-1]
+                        if current_tip["hash"] != new_block.previous_hash:
+                            continue
+                        self.db.insert_block(new_block)
                     with self.mempool_lock:
-                        self.mempool = [tx for tx in self.mempool if tx not in bloco_txs]
+                        self.mempool = [tx for tx in self.mempool if tx not in pending]
                     
                     raw_chain_json = json.dumps(self.db.get_raw_chain())
                     for ip, port in list(self.connected_peers):
@@ -398,7 +524,8 @@ if __name__ == '__main__':
             p2p_port = int(sys.argv[1])
         except ValueError:
             pass
-    AutoPortForwarder.open_port_on_router(p2p_port)
+    # UPnP não é ativado automaticamente: expor a carteira à internet sem a
+    # confirmação do dono é arriscado. A sincronização manual continua disponível.
     api_local = CriptoAPI(p2p_port)
     webview.create_window(title=f"Carteira Nativa {COIN_NAME} (Porta: {p2p_port})", url="index.html", js_api=api_local, width=740, height=800, resizable=True)
     webview.start()
