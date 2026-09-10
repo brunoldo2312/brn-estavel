@@ -128,8 +128,6 @@
         const fee = document.getElementById("fee").value.trim() || "0.0001";
         if (!to || !amt) { log("Preencha endereço e quantidade."); return; }
         log(`Enviando ${amt} BRN para ${to}...`);
-        // A criação da transação é feita no backend via wallet.
-        // Aqui enviamos os dados para o Python processar.
         try {
             const result = await api.send_from_gui(to, amt, fee);
             log(result);
@@ -146,7 +144,6 @@
 
     window.addEventListener("pywebviewready", async () => {
         api = window.pywebview.api;
-        // Obtém endereço da carteira via método exposto
         try {
             const info = await api.get_wallet_info();
             walletAddress = info.address;
