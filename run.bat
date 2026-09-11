@@ -6,10 +6,11 @@ REM  Script de instalacao e execucao do projeto BRN-L2
 REM  Usa Miniconda + conda-forge (sem canais defaults)
 REM  Instala TODAS as dependencias via conda para evitar
 REM  a necessidade do Microsoft Visual C++ Build Tools.
+REM  Agora com GUI (pywebview) e nao mais headless.
 REM ========================================================
 
 echo ========================================================
-echo  BRN-L2 - Instalacao e Execucao
+echo  BRN-L2 - Instalacao e Execucao (GUI)
 echo ========================================================
 echo.
 
@@ -49,9 +50,6 @@ if exist "C:\ProgramData\miniconda3\Scripts\conda.exe" (
 echo [AVISO] Miniconda nao foi encontrado.
 echo [INFO] Iniciando a instalacao automatica do Miniconda...
 
-REM --------------------------------------------------------
-REM  2. Instalar Miniconda automaticamente
-REM --------------------------------------------------------
 set "MINICONDA_INSTALLER=%TEMP%\Miniconda3-latest-Windows-x86_64.exe"
 set "MINICONDA_URL=https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe"
 
@@ -93,14 +91,12 @@ call "%CONDA_PATH%\Scripts\activate.bat" "%CONDA_PATH%"
 
 REM --------------------------------------------------------
 REM  4. Aceitar automaticamente os Termos de Servico
-REM     (fallback caso os canais defaults ainda sejam usados)
 REM --------------------------------------------------------
 echo [INFO] Configurando aceitacao automatica dos Termos de Servico...
 set CONDA_PLUGINS_AUTO_ACCEPT_TOS=yes
 
 REM --------------------------------------------------------
 REM  5. Remover o canal "defaults" da instalacao raiz
-REM     (isso evita o erro de ToS da Anaconda)
 REM --------------------------------------------------------
 echo [INFO] Removendo canal "defaults" do .condarc da instalacao raiz...
 
@@ -125,25 +121,26 @@ call conda config --show channels
 echo.
 
 REM --------------------------------------------------------
-REM  7. Criar ambiente com Python 3.13
+REM  7. Criar ambiente com Python 3.13 (se ainda nao existir)
 REM --------------------------------------------------------
-echo [INFO] Removendo ambiente antigo (se existir)...
-call conda env remove -n brn-l2 -y >nul 2>&1
-
-echo [INFO] Criando novo ambiente com Python 3.13...
-call conda create -n brn-l2 python=3.13 --override-channels -c conda-forge -y
-if %errorlevel% neq 0 (
-    echo [ERRO] Falha ao criar o ambiente conda.
-    pause
-    exit /b 1
+if exist "%CONDA_PATH%\envs\brn-l2" (
+    echo [INFO] Ambiente brn-l2 ja existe. Pulando criacao.
+) else (
+    echo [INFO] Criando novo ambiente com Python 3.13...
+    call conda create -n brn-l2 python=3.13 --override-channels -c conda-forge -y
+    if %errorlevel% neq 0 (
+        echo [ERRO] Falha ao criar o ambiente conda.
+        pause
+        exit /b 1
+    )
+    echo [INFO] Ambiente brn-l2 criado com sucesso.
 )
 
-echo [INFO] Ambiente brn-l2 criado com sucesso.
 echo.
 
 REM --------------------------------------------------------
 REM  8. Instalar TODAS as dependencias via conda-forge
-REM     (evita compilacao C++ e o erro do Build Tools)
+REM     (agora incluindo pywebview e pythonnet para a GUI)
 REM --------------------------------------------------------
 echo [INFO] Instalando TODAS as dependencias via conda-forge...
 echo [INFO] Isso pode levar alguns minutos na primeira vez.
@@ -161,7 +158,11 @@ call conda install -n brn-l2 --override-channels -c conda-forge -y ^
     requests ^
     colorama ^
     python-dotenv ^
-    loguru
+    loguru ^
+    pywebview ^
+    pythonnet ^
+    cryptography ^
+    pywin32
 
 if %errorlevel% neq 0 (
     echo.
@@ -180,6 +181,10 @@ if %errorlevel% neq 0 (
     call conda install -n brn-l2 --override-channels -c conda-forge -y colorama
     call conda install -n brn-l2 --override-channels -c conda-forge -y python-dotenv
     call conda install -n brn-l2 --override-channels -c conda-forge -y loguru
+    call conda install -n brn-l2 --override-channels -c conda-forge -y pywebview
+    call conda install -n brn-l2 --override-channels -c conda-forge -y pythonnet
+    call conda install -n brn-l2 --override-channels -c conda-forge -y cryptography
+    call conda install -n brn-l2 --override-channels -c conda-forge -y pywin32
 )
 
 echo.
@@ -197,23 +202,30 @@ python --version
 echo.
 
 echo [INFO] Verificando pacotes criticos...
-python -c "import orjson; print('  [OK] orjson')" 2>nul || echo [AVISO] orjson nao encontrado
-python -c "import web3; print('  [OK] web3')" 2>nul || echo [AVISO] web3 nao encontrado
-python -c "import coincurve; print('  [OK] coincurve')" 2>nul || echo [AVISO] coincurve nao encontrado
-python -c "import ckzg; print('  [OK] ckzg')" 2>nul || echo [AVISO] ckzg nao encontrado
-python -c "import lru; print('  [OK] lru-dict')" 2>nul || echo [AVISO] lru-dict nao encontrado
+python -c "import orjson; print('  [OK] orjson')"          2>nul || echo [AVISO] orjson nao encontrado
+python -c "import web3; print('  [OK] web3')"              2>nul || echo [AVISO] web3 nao encontrado
+python -c "import coincurve; print('  [OK] coincurve')"    2>nul || echo [AVISO] coincurve nao encontrado
+python -c "import ckzg; print('  [OK] ckzg')"              2>nul || echo [AVISO] ckzg nao encontrado
+python -c "import lru; print('  [OK] lru-dict')"           2>nul || echo [AVISO] lru-dict nao encontrado
 python -c "import eth_account; print('  [OK] eth-account')" 2>nul || echo [AVISO] eth-account nao encontrado
+python -c "import webview; print('  [OK] pywebview')"      2>nul || echo [AVISO] pywebview nao encontrado
+python -c "import clr; print('  [OK] pythonnet')"          2>nul || echo [AVISO] pythonnet nao encontrado
 echo.
 
 REM --------------------------------------------------------
-REM  10. Executar o projeto
+REM  10. Executar o projeto com GUI (main.py)
 REM --------------------------------------------------------
-if exist "node.py" (
-    echo [INFO] Executando o projeto...
+if exist "main.py" (
+    echo [INFO] Executando o projeto com interface grafica (GUI)...
+    echo [INFO] Aguarde alguns segundos enquanto a janela abre...
+    echo.
+    python main.py
+) else if exist "node.py" (
+    echo [AVISO] main.py nao encontrado. Usando node.py (headless)...
     echo.
     python node.py
 ) else (
-    echo [ERRO] Arquivo node.py nao encontrado no diretorio atual.
+    echo [ERRO] Nem main.py nem node.py foram encontrados no diretorio atual.
     echo [INFO] Certifique-se de que o run.bat esta na pasta raiz do projeto.
 )
 
